@@ -29,7 +29,7 @@ func (s *Server) Start() error {
 	hub := ws.Manager
 	go hub.Run()
 
-	RegisterRoutes(router)
+	RegisterRoutes(router, s.db)
 	RegisterWebSocketRoutes(router, hub)
 
 	addr := fmt.Sprintf(":%s", s.cfg.Port)
