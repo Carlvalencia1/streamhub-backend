@@ -1,61 +1,32 @@
 package server
 
 import (
-	"net/http"
+	"database/sql"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 
+	chatApp "github.com/Carlvalencia1/streamhub-backend/internal/chat/application"
+	chatInfra "github.com/Carlvalencia1/streamhub-backend/internal/chat/infrastructure"
+	chatWS "github.com/Carlvalencia1/streamhub-backend/internal/chat/interfaces/ws"
 	ws "github.com/Carlvalencia1/streamhub-backend/internal/platform/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
+func RegisterWebSocketRoutes(
+	r *gin.Engine,
+	manager *ws.Manager,
+	db *sql.DB,
+	authMiddleware gin.HandlerFunc,
+) {
 
-func RegisterWebSocketRoutes(r *gin.Engine, hub *ws.Hub) {
+	chatRepo := chatInfra.NewMySQLRepository(db)
+	sendUC := chatApp.NewSendMessage(chatRepo)
 
-	r.GET("/ws", func(c *gin.Context) {
+	chatHandler := chatWS.NewChatWSHandler(manager, sendUC)
 
-		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-		if err != nil {
-			return
-		}
+	wsGroup := r.Group("/ws")
 
-		client := &ws.Client{
-			ID:   c.Query("user_id"),
-			Conn: conn,
-			Send: make(chan ws.Message),
-		}
+	// 🔥 IMPORTANTE — proteger websocket con JWT
+	wsGroup.Use(authMiddleware)
 
-		hub.Register <- client
-
-		go readPump(client, hub)
-		go writePump(client)
-	})
-}
-
-func readPump(client *ws.Client, hub *ws.Hub) {
-
-	defer func() {
-		hub.Unregister <- client
-		client.Conn.Close()
-	}()
-
-	for {
-		var msg ws.Message
-		err := client.Conn.ReadJSON(&msg)
-		if err != nil {
-			break
-		}
-
-		hub.Broadcast <- msg
-	}
-}
-
-func writePump(client *ws.Client) {
-
-	for msg := range client.Send {
-		client.Conn.WriteJSON(msg)
-	}
+	wsGroup.GET("/chat/:stream_id", chatHandler.Handle)
 }

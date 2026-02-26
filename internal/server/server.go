@@ -6,8 +6,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/config"
 	ws "github.com/Carlvalencia1/streamhub-backend/internal/platform/websocket"
+	"github.com/Carlvalencia1/streamhub-backend/internal/platform/middleware"
 )
 
 type Server struct {
@@ -26,11 +28,19 @@ func (s *Server) Start() error {
 
 	router := gin.Default()
 
-	hub := ws.Manager
-	go hub.Run()
+	// 🔥 Manager WebSocket (salas por stream)
+	manager := ws.NewManager()
 
+	// Rutas HTTP normales
 	RegisterRoutes(router, s.db)
-	RegisterWebSocketRoutes(router, hub)
+
+	// 🔥 Rutas WebSocket con middleware JWT
+	RegisterWebSocketRoutes(
+		router,
+		manager,
+		s.db,
+		middleware.AuthMiddleware(), // ← AQUÍ ESTÁ LA CLAVE
+	)
 
 	addr := fmt.Sprintf(":%s", s.cfg.Port)
 
