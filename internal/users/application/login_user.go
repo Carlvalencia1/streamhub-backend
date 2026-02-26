@@ -27,5 +27,5 @@ func (uc *LoginUser) Execute(ctx context.Context, email, password string) (strin
 		return "", errors.New("invalid credentials")
 	}
 
-	return security.GenerateToken(user.ID)
+	return security.GenerateToken(user.ID, user.Username)
 }
