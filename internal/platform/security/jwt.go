@@ -9,14 +9,16 @@ import (
 var jwtSecret = []byte("super-secret-key")
 
 type Claims struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(userID string) (string, error) {
+func GenerateToken(userID string, username string) (string, error) {
 
 	claims := Claims{
-		UserID: userID,
+		UserID:   userID,
+		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 		},
@@ -41,7 +43,10 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 		return nil, err
 	}
 
-	claims := token.Claims.(*Claims)
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, err
+	}
 
 	return claims, nil
 }
