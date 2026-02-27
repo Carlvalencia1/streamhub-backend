@@ -23,7 +23,7 @@ func (uc *CreateStream) Execute(
 	thumbnail string,
 	category string,
 	ownerID string,
-) error {
+) (*domain.Stream, error) {
 
 	stream := &domain.Stream{
 		ID:           uuid.NewString(),
@@ -36,5 +36,10 @@ func (uc *CreateStream) Execute(
 		CreatedAt:    time.Now(),
 	}
 
-	return uc.repo.Create(ctx, stream)
+	err := uc.repo.Create(ctx, stream)
+	if err != nil {
+		return nil, err
+	}
+
+	return stream, nil
 }

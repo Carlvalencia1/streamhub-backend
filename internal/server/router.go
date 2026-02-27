@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,11 +48,13 @@ func RegisterRoutes(r *gin.Engine, db *sql.DB) {
 	createStreamUC := streamsApp.NewCreateStream(streamsRepo)
 	getStreamsUC := streamsApp.NewGetStreams(streamsRepo)
 	startStreamUC := streamsApp.NewStartStream(streamsRepo)
+	joinStreamUC := streamsApp.NewJoinStream(streamsRepo)
 
 	streamsHandler := streamsHTTP.NewHandler(
 		createStreamUC,
 		getStreamsUC,
 		startStreamUC,
+		joinStreamUC,
 	)
 
 	streamsHTTP.RegisterRoutes(api, streamsHandler)
@@ -65,7 +68,11 @@ func RegisterRoutes(r *gin.Engine, db *sql.DB) {
 
 	protected.GET("/me", func(c *gin.Context) {
 
-		userID, _ := c.Get("userID")
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+			return
+		}
 
 		c.JSON(200, gin.H{
 			"user_id": userID,

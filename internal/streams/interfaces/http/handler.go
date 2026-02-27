@@ -12,17 +12,20 @@ type Handler struct {
 	createUC *application.CreateStream
 	getUC    *application.GetStreams
 	startUC  *application.StartStream
+	joinUC   *application.JoinStream
 }
 
 func NewHandler(
 	createUC *application.CreateStream,
 	getUC *application.GetStreams,
 	startUC *application.StartStream,
+	joinUC *application.JoinStream,
 ) *Handler {
 	return &Handler{
 		createUC: createUC,
 		getUC:    getUC,
 		startUC:  startUC,
+		joinUC:   joinUC,
 	}
 }
 
@@ -35,15 +38,20 @@ type createRequest struct {
 
 func (h *Handler) Create(c *gin.Context) {
 
-	userID, _ := c.Get("userID")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
 
 	var req createRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
 
-	err := h.createUC.Execute(
+	stream, err := h.createUC.Execute(
 		c,
 		req.Title,
 		req.Description,
@@ -57,13 +65,14 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "stream created"})
+	c.JSON(http.StatusCreated, stream)
 }
 
 func (h *Handler) GetAll(c *gin.Context) {
 
 	streams, err := h.getUC.Execute(c)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get streams: " + err.Error()})
 		return
 	}
 
@@ -76,8 +85,22 @@ func (h *Handler) Start(c *gin.Context) {
 
 	err := h.startUC.Execute(c, id)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start stream: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "stream started"})
+}
+
+func (h *Handler) Join(c *gin.Context) {
+
+	id := c.Param("id")
+
+	err := h.joinUC.Execute(c, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join stream: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "joined stream successfully"})
 }

@@ -16,4 +16,5 @@ func RegisterRoutes(r *gin.RouterGroup, handler *Handler) {
 
 	protected.POST("/", handler.Create)
 	protected.PUT("/:id/start", handler.Start)
+	protected.POST("/:id/join", handler.Join)
 }
