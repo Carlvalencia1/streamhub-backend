@@ -89,6 +89,18 @@ func (r *MySQLRepository) GetAll(ctx context.Context) ([]*domain.Stream, error) 
 	return streams, nil
 }
 
+func (r *MySQLRepository) JoinStream(ctx context.Context, streamID string) error {
+
+	query := `
+	UPDATE streams
+	SET viewers_count = viewers_count + 1
+	WHERE id = ?
+	`
+
+	_, err := r.db.ExecContext(ctx, query, streamID)
+	return err
+}
+
 func (r *MySQLRepository) StartStream(ctx context.Context, streamID string) error {
 
 	now := time.Now()
