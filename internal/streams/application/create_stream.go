@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	RTMPServerURL    = "rtmp://54.144.66.251/live"
-	HLSServerURL     = "http://54.144.66.251/live"
+	RTMPServerURL    = "rtmp://3.232.197.126/live"
+	HLSServerURL     = "http://3.232.197.126/live"
 )
 
 type CreateStream struct {
