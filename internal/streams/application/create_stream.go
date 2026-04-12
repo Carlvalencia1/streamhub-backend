@@ -2,10 +2,16 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/Carlvalencia1/streamhub-backend/internal/streams/domain"
+)
+
+const (
+	RTMPServerURL    = "rtmp://54.144.66.251/live"
+	HLSServerURL     = "http://54.144.66.251/live"
 )
 
 type CreateStream struct {
@@ -25,6 +31,10 @@ func (uc *CreateStream) Execute(
 	ownerID string,
 ) (*domain.Stream, error) {
 
+	streamKey := uuid.NewString()
+	rtmpURL := fmt.Sprintf("%s/%s", RTMPServerURL, streamKey)
+	playbackURL := fmt.Sprintf("%s/%s.m3u8", HLSServerURL, streamKey)
+
 	stream := &domain.Stream{
 		ID:           uuid.NewString(),
 		Title:        title,
@@ -34,6 +44,8 @@ func (uc *CreateStream) Execute(
 		OwnerID:      ownerID,
 		IsLive:       false,
 		CreatedAt:    time.Now(),
+		StreamKey:    streamKey,
+		PlaybackURL:  playbackURL,
 	}
 
 	err := uc.repo.Create(ctx, stream)

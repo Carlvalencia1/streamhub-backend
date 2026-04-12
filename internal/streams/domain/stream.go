@@ -12,5 +12,8 @@ type Stream struct {
 	ViewersCount int        `json:"viewers_count"`
 	IsLive       bool       `json:"is_live"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
+	StreamKey    string     `json:"stream_key"`
+	PlaybackURL  string     `json:"playback_url"`
 }

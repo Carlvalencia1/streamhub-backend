@@ -10,11 +10,13 @@ func RegisterRoutes(r *gin.RouterGroup, handler *Handler) {
 	streams := r.Group("/streams")
 
 	streams.GET("/", handler.GetAll)
+	streams.GET("/:id", handler.GetByID)
 
 	protected := streams.Group("/")
 	protected.Use(middleware.AuthMiddleware())
 
 	protected.POST("/", handler.Create)
 	protected.PUT("/:id/start", handler.Start)
+	protected.PUT("/:id/stop", handler.Stop)
 	protected.POST("/:id/join", handler.Join)
 }

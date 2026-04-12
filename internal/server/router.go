@@ -47,13 +47,17 @@ func RegisterRoutes(r *gin.Engine, db *sql.DB) {
 
 	createStreamUC := streamsApp.NewCreateStream(streamsRepo)
 	getStreamsUC := streamsApp.NewGetStreams(streamsRepo)
+	getStreamByIDUC := streamsApp.NewGetStreamByID(streamsRepo)
 	startStreamUC := streamsApp.NewStartStream(streamsRepo)
+	stopStreamUC := streamsApp.NewStopStream(streamsRepo)
 	joinStreamUC := streamsApp.NewJoinStream(streamsRepo)
 
 	streamsHandler := streamsHTTP.NewHandler(
 		createStreamUC,
 		getStreamsUC,
+		getStreamByIDUC,
 		startStreamUC,
+		stopStreamUC,
 		joinStreamUC,
 	)
 
