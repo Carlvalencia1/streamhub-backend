@@ -1,7 +1,7 @@
 package webrtc
 
 import (
-	"encoding/json"
+	"fmt"
 	"sync"
 
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
@@ -17,9 +17,8 @@ type SignalingServer struct {
 	PendingOffers map[string]*SignalingMessage
 	offersMu      sync.RWMutex
 
-	// Channels para comunicación
+	// MessageChan para comunicación de mensajes
 	MessageChan chan *SignalingMessage
-	StopChan    chan struct{}
 }
 
 // NewSignalingServer crea un nuevo servidor de signaling
@@ -28,7 +27,6 @@ func NewSignalingServer() *SignalingServer {
 		Sessions:     make(map[string]*BroadcastSession),
 		PendingOffers: make(map[string]*SignalingMessage),
 		MessageChan:  make(chan *SignalingMessage, 100),
-		StopChan:     make(chan struct{}),
 	}
 }
 
@@ -196,18 +194,11 @@ func (s *SignalingServer) GetViewerCount(streamID string) int {
 // BroadcastSignalingMessage envía un mensaje a todos los espectadores
 func (s *SignalingServer) BroadcastSignalingMessage(streamID string, msg *SignalingMessage) error {
 	s.mu.RLock()
-	session, exists := s.Sessions[streamID]
+	_, exists := s.Sessions[streamID]
 	s.mu.RUnlock()
 
 	if !exists {
 		return nil
-	}
-
-	// Serializar mensaje
-	data, err := json.Marshal(msg)
-	if err != nil {
-		logger.ErrorWithContext("SignalingServer", "failed to marshal message", err)
-		return err
 	}
 
 	logger.Debug("Broadcasting signaling message for stream: " + streamID)
@@ -216,7 +207,7 @@ func (s *SignalingServer) BroadcastSignalingMessage(streamID string, msg *Signal
 	return nil
 }
 
-// Helper
+// Helper - Convierte int a string
 func itoa(i int) string {
-	return json.Number(string(rune(i))).String()
+	return fmt.Sprintf("%d", i)
 }

@@ -1,30 +1,27 @@
 package ws
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+	gorillaws "github.com/gorilla/websocket"
 
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/webrtc"
-	"github.com/Carlvalencia1/streamhub-backend/internal/platform/websocket"
 )
 
 // WebRTCHandler maneja las conexiones WebRTC via WebSocket
 type WebRTCHandler struct {
 	signalingServer *webrtc.SignalingServer
-	upgrader        websocket.Upgrader
+	upgrader        gorillaws.Upgrader
 }
 
 // NewWebRTCHandler crea un nuevo handler WebRTC
 func NewWebRTCHandler(signalingServer *webrtc.SignalingServer) *WebRTCHandler {
 	return &WebRTCHandler{
 		signalingServer: signalingServer,
-		upgrader: websocket.Upgrader{
+		upgrader: gorillaws.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Permitir CORS
 			},
@@ -71,7 +68,7 @@ func (h *WebRTCHandler) HandleBroadcaster(c *gin.Context) {
 	for {
 		var msg webrtc.SignalingMessage
 		if err := conn.ReadJSON(&msg); err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if gorillaws.IsUnexpectedCloseError(err, gorillaws.CloseGoingAway, gorillaws.CloseAbnormalClosure) {
 				logger.ErrorWithContext("WebRTCHandler", "websocket error", err)
 			}
 			break
@@ -143,7 +140,7 @@ func (h *WebRTCHandler) HandleViewer(c *gin.Context) {
 	for {
 		var msg webrtc.SignalingMessage
 		if err := conn.ReadJSON(&msg); err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if gorillaws.IsUnexpectedCloseError(err, gorillaws.CloseGoingAway, gorillaws.CloseAbnormalClosure) {
 				logger.ErrorWithContext("WebRTCHandler", "websocket error", err)
 			}
 			break
@@ -164,24 +161,4 @@ func (h *WebRTCHandler) HandleViewer(c *gin.Context) {
 	// Desregistrar espectador
 	h.signalingServer.UnregisterViewer(streamID, userIDStr)
 	logger.StreamEvent("VIEWER_DISCONNECTED", streamID, fmt.Sprintf("User: %s | Remaining viewers: %d", userIDStr, h.signalingServer.GetViewerCount(streamID)))
-}
-
-// HandleSignaling maneja (alternativa) ambos transmisor y espectador en misma conexión
-// NO RECOMENDADO para este proyecto, pero útil si necesitas simplificar
-func (h *WebRTCHandler) HandleSignaling(c *gin.Context) {
-	streamID := c.Param("stream_id")
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
-		return
-	}
-
-	userIDStr := userID.(string)
-	isBroadcaster := strings.ToLower(c.Query("type")) == "broadcaster"
-
-	if isBroadcaster {
-		h.HandleBroadcaster(c)
-	} else {
-		h.HandleViewer(c)
-	}
 }
