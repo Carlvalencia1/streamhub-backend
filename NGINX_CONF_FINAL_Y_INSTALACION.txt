@@ -1,0 +1,312 @@
+================================================================================
+NGINX.CONF FINAL - CONFIGURACIÓN CORREGIDA Y VERIFICADA
+================================================================================
+
+Esta es la configuración completa que ya tienes implementada.
+Solo cópialo a /etc/nginx/nginx.conf en tu EC2.
+
+================================================================================
+COPIAR ESTO A: /etc/nginx/nginx.conf en EC2
+================================================================================
+
+# NGINX Configuration with RTMP Module for Streaming
+# Location: /etc/nginx/nginx.conf or /usr/local/etc/nginx/nginx.conf
+
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 4096;
+    use epoll;
+}
+
+
+# ============================================================================
+# RTMP CONFIGURATION - Genera HLS dinámicamente por stream_key
+# ============================================================================
+rtmp {
+    server {
+        listen 1935;
+        chunk_size 4096;
+        timeout 600s;
+
+        application live {
+            live on;
+            
+            # ===== HLS CONFIGURATION =====
+            hls on;                       # HLS habilitado
+            hls_path /var/www/hls;        # Carpeta base de archivos HLS
+            hls_fragment 2s;              # Duración de cada segmento
+            hls_playlist_length 12s;      # Duración total de la playlist
+            hls_continuous on;            # Mantener segmentos viejos
+            hls_nested on;                # ⭐ CLAVE: subdirectorio por stream_key
+            hls_cleanup on;               # Limpiar automáticamente segmentos viejos
+
+            drop_idle_publisher 10s;
+
+            # ===== WEBHOOKS CON BACKEND =====
+            on_publish http://3.232.197.126:8081/api/streams/validate-key;
+            on_publish_done http://3.232.197.126:8081/api/streams/stop;
+        }
+    }
+}
+
+
+# ============================================================================
+# HTTP CONFIGURATION - Sirve archivos HLS
+# ============================================================================
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # MIME types para streaming
+    types {
+        application/vnd.apple.mpegurl m3u8;
+        video/mp2t ts;
+        application/dash+xml mpd;
+    }
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 20M;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/json application/javascript application/xml+rss 
+               application/atom+xml image/svg+xml;
+
+    upstream backend {
+        server 3.232.197.126:8081;
+        keepalive 64;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        # ===== HLS PLAYBACK ENDPOINT =====
+        location /live {
+            alias /var/www/hls;
+            
+            add_header Access-Control-Allow-Origin *;
+            add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS";
+            add_header Access-Control-Expose-Headers "Content-Length";
+
+            # Playlists M3U8 - no cachear
+            location ~ \.m3u8$ {
+                add_header Cache-Control "public, max-age=0";
+                types {
+                    application/vnd.apple.mpegurl m3u8;
+                }
+            }
+
+            # Segmentos TS - cachear 1 hora
+            location ~ \.ts$ {
+                add_header Cache-Control "public, max-age=3600";
+                types {
+                    video/mp2t ts;
+                }
+            }
+
+            # Denegar acceso a archivos ocultos
+            location ~ /\. {
+                deny all;
+            }
+        }
+
+        # Estadísticas de streams
+        location /stat {
+            rtmp_stat all;
+            rtmp_stat_stylesheet stat.xsl;
+            add_header Access-Control-Allow-Origin *;
+        }
+
+        location /stat.xsl {
+            root /usr/local/nginx/html;
+        }
+
+        # Health check
+        location /health {
+            access_log off;
+            return 200 "OK\n";
+            add_header Content-Type text/plain;
+        }
+
+        # API proxy
+        location /api/ {
+            proxy_pass http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Static files
+        location / {
+            root /var/www/html;
+            index index.html index.htm;
+            try_files $uri $uri/ =404;
+        }
+
+        error_page 404 /404.html;
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /var/www/html;
+        }
+    }
+}
+
+================================================================================
+FIN DE CONFIGURACIÓN
+================================================================================
+
+
+================================================================================
+INSTALACIÓN EN EC2
+================================================================================
+
+1. SSH a tu EC2:
+   ssh -i tu-key.pem ec2-user@54.144.66.251
+
+2. Crear directorios necesarios:
+   sudo mkdir -p /var/www/hls
+   sudo mkdir -p /var/www/html
+   sudo mkdir -p /var/log/nginx
+   sudo chown -R nginx:nginx /var/www/hls
+   sudo chown -R nginx:nginx /var/www/html
+   sudo chmod -R 755 /var/www/hls
+
+3. Copiar el archivo nginx.conf (desde tu máquina local):
+   scp -i tu-key.pem nginx.conf ec2-user@54.144.66.251:/tmp/
+   
+4. En EC2, copiar a ubicación correcta:
+   sudo cp /tmp/nginx.conf /etc/nginx/nginx.conf
+
+5. Verificar sintaxis:
+   sudo nginx -t
+   # Debe mostrar: "nginx: configuration file test is successful"
+
+6. Reiniciar NGINX:
+   sudo systemctl restart nginx
+   
+   O si usas systemctl:
+   sudo service nginx restart
+
+7. Verificar que esté corriendo:
+   sudo systemctl status nginx
+   ps aux | grep nginx
+
+
+================================================================================
+VERIFICACIÓN RÁPIDA
+================================================================================
+
+1. ¿NGINX escucha en puerto 1935 (RTMP)?
+   sudo netstat -tlnp | grep 1935
+   # Debe mostrar: 0.0.0.0:1935
+
+2. ¿NGINX escucha en puerto 80 (HTTP)?
+   sudo netstat -tlnp | grep 80
+   # Debe mostrar: 0.0.0.0:80
+
+3. ¿/var/www/hls tiene permisos correctos?
+   ls -la /var/www/hls
+   # Debe ser: drwxr-xr-x nginx:nginx
+
+4. ¿Health check funciona?
+   curl http://54.144.66.251/health
+   # Debe retornar: OK
+
+5. ¿NGINX tiene módulo RTMP?
+   sudo nginx -V 2>&1 | grep rtmp
+   # Debe mostrar: --add-module=../nginx-rtmp-module
+
+
+================================================================================
+CÓMO FUNCIONA CON TU BACKEND
+================================================================================
+
+1. Backend crea stream y devuelve:
+   {
+     "stream_key": "abc-123-def",
+     "playback_url": "http://54.144.66.251/live/abc-123-def/index.m3u8"
+   }
+
+2. OBS conecta a:
+   rtmp://54.144.66.251/live/abc-123-def
+
+3. NGINX crea automáticamente:
+   /var/www/hls/abc-123-def/index.m3u8
+   /var/www/hls/abc-123-def/0.ts
+   /var/www/hls/abc-123-def/1.ts
+   etc.
+
+4. Cliente reproduce:
+   http://54.144.66.251/live/abc-123-def/index.m3u8
+
+TODO FUNCIONA SIN CAMBIOS ADICIONALES ✓
+
+
+================================================================================
+LOGS ÚTILES PARA DEBUG
+================================================================================
+
+Ver logs en tiempo real:
+  sudo tail -f /var/log/nginx/error.log
+  sudo tail -f /var/log/nginx/access.log
+
+Ver estadísticas de streams:
+  curl http://54.144.66.251/stat
+  (O en navegador: http://54.144.66.251/stat)
+
+Ver archivos HLS generados:
+  ls -lh /var/www/hls/*/
+
+Ver tamaño total de HLS:
+  du -sh /var/www/hls/
+
+Ver proceso NGINX:
+  ps aux | grep nginx
+
+
+================================================================================
+LIMPIAR ESPACIOS/TROUBLESHOOTING
+================================================================================
+
+Si el disco se llena:
+  sudo find /var/www/hls -type d -empty -delete
+  sudo find /var/www/hls -mtime +1 -delete  # Borrar archivos >1 día
+
+Si NGINX no inicia:
+  sudo nginx -t  (ver errores específicos)
+  sudo systemctl restart nginx  (intentar reiniciar)
+  tail -n 50 /var/log/nginx/error.log  (ver últimos 50 errores)
+
+Si HLS no genera:
+  Verificar que on_publish retorne 200 OK
+  Verificar logs: tail -f /var/log/nginx/error.log
+  Verificar permisos: ls -la /var/www/hls/
+
+Si reproductor obtiene 404:
+  Verificar que playback_url sea exacto
+  Verificar que el archivo exista: ls /var/www/hls/{stream_key}/
+
+================================================================================

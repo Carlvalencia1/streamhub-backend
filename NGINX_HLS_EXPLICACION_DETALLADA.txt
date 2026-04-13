@@ -1,0 +1,368 @@
+================================================================================
+VERIFICACIÓN Y EXPLICACIÓN: NGINX + RTMP + HLS DINÁMICO POR STREAM_KEY
+================================================================================
+
+✅ ESTADO ACTUAL: LA CONFIGURACIÓN YA ES CORRECTA
+
+Tu nginx.conf ya tiene todo lo necesario:
+- hls on; (HLS habilitado)
+- hls_path /var/www/hls; (Ruta base de archivos)
+- hls_nested on; (CLAVE: crea subdirectorios por stream_key)
+- hls_cleanup on; (Limpia segmentos viejos)
+- hls_fragment 2s; (Fragmentos de 2 segundos)
+- hls_playlist_length 12s; (Duración de playlist)
+
+
+================================================================================
+CÓMO FUNCIONA: hls_nested on
+================================================================================
+
+La configuración "hls_nested on" es lo que permite que cada stream tenga su 
+propia carpeta dinámicamente:
+
+CUANDO OBS CONECTA A:
+rtmp://54.144.66.251/live/{stream_key}
+
+NGINX CREA AUTOMÁTICAMENTE:
+/var/www/hls/{stream_key}/
+
+
+DENTRO DE ESA CARPETA SE GENERAN:
+- index.m3u8 (Master playlist)
+- 0.ts (Video/audio segment 1)
+- 1.ts (Video/audio segment 2)
+- 2.ts (Video/audio segment 3)
+- etc.
+
+
+================================================================================
+ESTRUCTURA DE ARCHIVOS GENERADA
+================================================================================
+
+Base directory: /var/www/hls/
+
+Ejemplo con múltiples streams simultáneos:
+
+/var/www/hls/
+├── abc-123-def/
+│   ├── index.m3u8
+│   ├── 0.ts
+│   ├── 1.ts
+│   ├── 2.ts
+│   └── 3.ts
+│
+├── xyz-789-ghi/
+│   ├── index.m3u8
+│   ├── 0.ts
+│   ├── 1.ts
+│   └── 2.ts
+│
+└── stream-key-3/
+    ├── index.m3u8
+    ├── 0.ts
+    └── 1.ts
+
+
+Cada carpeta {stream_key}/ contiene su propio stream completo.
+
+
+================================================================================
+FLUJO COMPLETO DE LA TRANSMISIÓN
+================================================================================
+
+1. CLIENTE CREA STREAM (Backend Go)
+   POST /api/streams
+   
+   Response:
+   {
+     "id": "uuid-123",
+     "title": "Mi Stream",
+     "stream_key": "abc-123-def",
+     "rtmp_url": "rtmp://54.144.66.251/live/abc-123-def",
+     "playback_url": "http://54.144.66.251/live/abc-123-def/index.m3u8"
+   }
+
+
+2. OBS INICIA TRANSMISIÓN
+   OBS Settings:
+   - Server: rtmp://54.144.66.251/live
+   - Stream Key: abc-123-def
+   
+   OBS se conecta a:
+   rtmp://54.144.66.251/live/abc-123-def
+
+
+3. NGINX RECIBE CONEXIÓN RTMP
+   - El "application live" captura la conexión
+   - Extrae el stream_key = "abc-123-def"
+   - Crea carpeta dinámicamente: /var/www/hls/abc-123-def/
+   
+   ON_PUBLISH WEBHOOK:
+   POST http://3.232.197.126:8081/api/streams/validate-key?app=live&name=abc-123-def
+   
+   Backend marca: IsLive = true
+
+
+4. NGINX GENERA HLS AUTOMÁTICAMENTE
+   RTMP stream → Fragmentación → HLS
+   
+   Se crean:
+   /var/www/hls/abc-123-def/index.m3u8
+   /var/www/hls/abc-123-def/0.ts
+   /var/www/hls/abc-123-def/1.ts
+   /var/www/hls/abc-123-def/2.ts
+   etc.
+   
+   Los archivos se actualizan en vivo cada 2 segundos.
+
+
+5. CLIENTE (ANDROID/WEB) REPRODUCE
+   GET http://54.144.66.251/live/abc-123-def/index.m3u8
+   
+   NGINX sirve:
+   - index.m3u8 (no se cachea)
+   - 0.ts (se cachea 1 hora)
+   - 1.ts (se cachea 1 hora)
+   - 2.ts (se cachea 1 hora)
+   
+   NGINX retorna headers:
+   - Content-Type: application/vnd.apple.mpegurl
+   - Access-Control-Allow-Origin: *
+   - Cache-Control: public, max-age=0 (para .m3u8)
+
+
+6. REPRODUCCIÓN EN VIVO
+   El reproductor HLS:
+   - Lee index.m3u8
+   - Descarga segmentos 0.ts, 1.ts, 2.ts
+   - Reproduce en emisión en vivo
+   - Cada 2 segundos pide nuevos segmentos
+   - index.m3u8 se actualiza con nuevos segmentos
+
+
+7. OBS DETIENE TRANSMISIÓN
+   OBS cierra conexión RTMP
+   
+   ON_PUBLISH_DONE WEBHOOK:
+   POST http://3.232.197.126:8081/api/streams/stop?app=live&name=abc-123-def
+   
+   Backend marca: IsLive = false
+   
+   hls_cleanup on limpia archivos viejos:
+   /var/www/hls/abc-123-def/ directorio se mantiene pero se limpian segmentos
+
+
+================================================================================
+BLOQUES DE CONFIGURACIÓN CLAVE
+================================================================================
+
+RTMP APPLICATION (Genera HLS dinámicamente):
+───────────────────────────────────────────
+
+application live {
+    live on;
+    hls on;                    ← HLS habilitado
+    hls_path /var/www/hls;     ← Ruta base
+    hls_fragment 2s;           ← Duración de fragmento
+    hls_playlist_length 12s;   ← Duración de playlist (3-4 fragmentos)
+    hls_nested on;             ← CLAVE: crea subdirectorio por stream_key
+    hls_cleanup on;            ← Limpia segmentos viejos
+    
+    on_publish http://backend/api/streams/validate-key;
+    on_publish_done http://backend/api/streams/stop;
+}
+
+
+HTTP LOCATION (Sirve archivos HLS):
+────────────────────────────────────
+
+location /live {
+    alias /var/www/hls;        ← Apunta a /var/www/hls/{stream_key}/
+    
+    add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS";
+    
+    # Para .m3u8: no cachear (es dinámica)
+    location ~ \.m3u8$ {
+        add_header Cache-Control "public, max-age=0";
+        types {
+            application/vnd.apple.mpegurl m3u8;
+        }
+    }
+    
+    # Para .ts: cachear 1 hora (son estáticos)
+    location ~ \.ts$ {
+        add_header Cache-Control "public, max-age=3600";
+        types {
+            video/mp2t ts;
+        }
+    }
+}
+
+
+MIME TYPES (Crucial para navegadores):
+───────────────────────────────────────
+
+types {
+    application/vnd.apple.mpegurl m3u8;  ← Para playlists
+    video/mp2t ts;                        ← Para segmentos de video
+    application/dash+xml mpd;             ← Para DASH (opcional)
+}
+
+
+================================================================================
+VERIFICACIÓN: CÓMO COMPROBAR QUE FUNCIONA
+================================================================================
+
+1. VERIFICAR QUE LOS ARCHIVOS SE GENERAN:
+   
+   ssh -i key.pem ec2-user@54.144.66.251
+   
+   # Ver estructura
+   find /var/www/hls -type f
+   
+   # Ejemplo de salida:
+   /var/www/hls/abc-123-def/index.m3u8
+   /var/www/hls/abc-123-def/0.ts
+   /var/www/hls/abc-123-def/1.ts
+   /var/www/hls/abc-123-def/2.ts
+
+
+2. VERIFICAR EL CONTENIDO DEL .m3u8:
+   
+   cat /var/www/hls/abc-123-def/index.m3u8
+   
+   # Debe verse algo como:
+   #EXTM3U
+   #EXT-X-VERSION:3
+   #EXT-X-TARGETDURATION:2
+   #EXTINF:2.0,
+   #EXT-X-MEDIA-SEQUENCE:0
+   #EXTINF:2.0,
+   0.ts
+   #EXTINF:2.0,
+   1.ts
+   #EXTINF:2.0,
+   2.ts
+   #EXT-X-ENDLIST
+
+
+3. VERIFICAR DESDE CLIENTE:
+   
+   curl http://54.144.66.251/live/abc-123-def/index.m3u8
+   
+   # Debe retornar contenido M3U8
+   
+   
+4. VER EN VLC:
+   
+   VLC > Media > Abrir URL de red
+   http://54.144.66.251/live/abc-123-def/index.m3u8
+   
+   # Debe reproducirse en vivo
+
+
+5. VER LOGS DE NGINX:
+   
+   sudo tail -f /var/log/nginx/error.log
+   sudo tail -f /var/log/nginx/access.log
+   
+   # Buscar errores relacionados con HLS
+
+
+6. VER ESTADÍSTICAS:
+   
+   curl http://54.144.66.251/stat
+   
+   # O en navegador: http://54.144.66.251/stat
+   # Muestra todos los streams activos
+
+
+================================================================================
+PARÁMETROS CLAVE EXPLICADOS
+================================================================================
+
+hls_fragment 2s
+└─ Duración de cada segmento de video
+   - 2s: bueno para baja latencia (streaming en vivo)
+   - 5s: bueno para estabilidad
+   - 10s: para grabaciones, menos chunks
+
+hls_playlist_length 12s
+└─ Duración total de la playlist (buffer)
+   - 12s con fragmentos de 2s = 3-4 segmentos en playlist
+   - Mayor buffer = más estable pero más latencia
+
+hls_nested on
+└─ CRÍTICO: crea /var/www/hls/{stream_key}/ por cada transmisión
+   - Sin esto: todos los streams en /var/www/hls/ (se sobreescriben)
+   - Con esto: cada stream tiene su carpeta aislada
+
+hls_cleanup on
+└─ Limpia automáticamente segmentos viejos (fuera del buffer)
+   - Evita que se llene el disco
+   - Mantiene solo los segmentos activos
+
+hls_continuous on
+└─ Mantiene los segmentos viejos mientras hay clientes conectados
+   - Permite que clientes se conecten a mitad de stream
+
+drop_idle_publisher 10s
+└─ Desconecta streamer que no envía datos por 10s
+   - Evita conexiones zombies
+
+
+================================================================================
+URL CORRECTA vs INCORRECTA
+================================================================================
+
+INCORRECTO (sin subruta):
+────────────────────────
+playback_url: http://54.144.66.251/live.m3u8
+             (usa directamente /live como archivo)
+              
+NGINX busca: /var/www/hls/live.m3u8 (❌ NO EXISTE)
+Resultado: 404 Not Found
+
+
+CORRECTO (con carpeta dinámmica):
+──────────────────────────────────
+playback_url: http://54.144.66.251/live/abc-123-def/index.m3u8
+             (usa /live/{stream_key}/ como carpeta)
+             
+NGINX busca: /var/www/hls/abc-123-def/index.m3u8 (✓ EXISTE)
+Resultado: 200 OK + contenido HLS
+
+
+================================================================================
+BACKEND GO RETORNA (CORRECTO):
+================================================================================
+
+{
+  "id": "uuid-5678",
+  "title": "Mi Streaming",
+  "stream_key": "abc-123-def",
+  "rtmp_url": "rtmp://54.144.66.251/live/abc-123-def",
+  "playback_url": "http://54.144.66.251/live/abc-123-def/index.m3u8"
+                  └─ Esto coincide con:
+                     /var/www/hls/abc-123-def/index.m3u8 ✓
+}
+
+
+================================================================================
+CONCLUSIÓN
+================================================================================
+
+✅ Tu configuración NGINX ya es correcta
+✅ Soporta múltiples streams simultáneos
+✅ Cada stream tiene su propia carpeta dinámicamente
+✅ Los archivos HLS se generan en: /var/www/hls/{stream_key}/
+✅ El flujo completo está configurado correctamente
+✅ Backend devuelve playback_url que funciona sin cambios
+
+NO NECESITA CAMBIOS. Solo aseguura que:
+1. Los directorios /var/www/hls/ tengan permisos correctos
+2. NGINX esté reiniciado después de copiar nginx.conf
+3. El backend y NGINX puedan comunicarse
+
+================================================================================

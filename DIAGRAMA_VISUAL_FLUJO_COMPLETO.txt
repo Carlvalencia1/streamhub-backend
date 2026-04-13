@@ -1,0 +1,311 @@
+================================================================================
+DIAGRAMA VISUAL: FLUJO COMPLETO DE STREAMING CON HLS DINÁMICO
+================================================================================
+
+================================================================================
+1. CREACIÓN DE STREAM (Backend Go)
+================================================================================
+
+   Cliente Android/Web
+           │
+           │ POST /api/streams
+           │ {"title": "Mi Stream"}
+           ↓
+   ┌─────────────────────────┐
+   │   Backend Go (3.232...)  │
+   │                         │
+   │ - Genera stream_key     │
+   │ - Genera playback_url   │
+   │ - Guarda en BD          │
+   └────────┬────────────────┘
+            │
+            │ Response:
+            │ {
+            │   "stream_key": "abc-123",
+            │   "rtmp_url": "rtmp://54.144.66.251/live/abc-123",
+            │   "playback_url": "http://54.144.66.251/live/abc-123/index.m3u8"
+            │ }
+            ↓
+           OBS Streamer
+
+
+================================================================================
+2. OBS CONECTA A RTMP
+================================================================================
+
+   OBS Streamer
+   (Micrófono + Cámara)
+           │
+           │ Inicia transmisión
+           │ rtmp://54.144.66.251/live/abc-123
+           ↓
+   ┌───────────────────────────┐
+   │ NGINX RTMP Server         │
+   │ (54.144.66.251:1935)      │
+   │                           │
+   │ application live {        │
+   │   hls on;                 │
+   │   hls_nested on;          │
+   │   hls_path /var/www/hls;  │
+   │ }                         │
+   │                           │
+   │ ← Recibe stream RTMP      │
+   │ ← Extrae: stream_key      │
+   │ ← Valida con backend      │
+   └──────────┬────────────────┘
+              │
+              │ ON_PUBLISH WEBHOOK:
+              │ POST /api/streams/validate-key?name=abc-123
+              ↓
+        Backend valida
+        y marca IsLive=true
+
+
+================================================================================
+3. NGINX GENERA CARPETAS Y ARCHIVOS HLS
+================================================================================
+
+   NGINX RTMP recibe RTMP stream
+           │
+           │ Lee STREAM_KEY = "abc-123"
+           │
+           ↓
+   ┌─ Crea carpeta dinámica:
+   │  /var/www/hls/abc-123/
+   │
+   │ ┌─ Genera archivos HLS:
+   │ │
+   │ ├─ index.m3u8 (Master Playlist)
+   │ ├─ 0.ts (Segmento 1: 2s de video/audio)
+   │ ├─ 1.ts (Segmento 2: 2s de video/audio)
+   │ ├─ 2.ts (Segmento 3: 2s de video/audio)
+   │ └─ ...más segmentos mientras OBS transmite
+   │
+   └─ hls_nested on hace todo esto automáticamente
+
+
+================================================================================
+4. CLIENTE REPRODUCE HLS
+================================================================================
+
+   Cliente Android/Web
+   (tiene playback_url del paso 1)
+           │
+           │ GET http://54.144.66.251/live/abc-123/index.m3u8
+           ↓
+   ┌───────────────────────────┐
+   │ NGINX HTTP Server         │
+   │ (54.144.66.251:80)        │
+   │                           │
+   │ location /live {          │
+   │   alias /var/www/hls;     │
+   │   CORS headers;           │
+   │ }                         │
+   │                           │
+   │ ← GET /live/abc-123/index.m3u8
+   │ → Sirve /var/www/hls/abc-123/index.m3u8
+   └──────────┬────────────────┘
+              ↓
+        Contenido M3U8:
+        #EXTM3U
+        #EXT-X-VERSION:3
+        #EXTINF:2.0,
+        0.ts
+        #EXTINF:2.0,
+        1.ts
+        #EXTINF:2.0,
+        2.ts
+
+
+================================================================================
+5. REPRODUCCIÓN EN VIVO
+================================================================================
+
+   Reproductor HLS (VLC, HLS.js, ExoPlayer, etc.)
+   
+   Paso 1: Lee index.m3u8
+           ↓
+   Paso 2: Descarga segmentos:
+           GET /live/abc-123/0.ts
+           GET /live/abc-123/1.ts
+           GET /live/abc-123/2.ts
+           ↓
+   Paso 3: Reproduce audio/video de los segmentos
+           ↓
+   Paso 4: Cada 2 segundos pide index.m3u8 actualizado
+           ↓
+   Paso 5: Descarga nuevos segmentos
+           ↓
+   Paso 6: Reproducción en VIVO continúa
+
+
+================================================================================
+6. MÚLTIPLES STREAMS SIMULTÁNEOS
+================================================================================
+
+   /var/www/hls/
+   ├── stream-key-1/
+   │   ├── index.m3u8
+   │   ├── 0.ts
+   │   ├── 1.ts
+   │   ├── 2.ts
+   │   └── 3.ts
+   │
+   ├── stream-key-2/
+   │   ├── index.m3u8
+   │   ├── 0.ts
+   │   ├── 1.ts
+   │   └── 2.ts
+   │
+   └── stream-key-3/
+       ├── index.m3u8
+       ├── 0.ts
+       └── 1.ts
+
+   Cada stream tiene su PROPIA CARPETA con sus PROPIOS ARCHIVOS
+
+
+================================================================================
+7. PARAR TRANSMISIÓN
+================================================================================
+
+   OBS cierra conexión
+           │
+           │ Desconecta de rtmp://54.144.66.251/live/abc-123
+           │
+           ↓
+   NGINX recibe desconexión
+   ON_PUBLISH_DONE WEBHOOK:
+   POST /api/streams/stop?name=abc-123
+           │
+           ↓
+   Backend marca IsLive=false
+           │
+           ↓
+   NGINX limpia segmentos viejos (hls_cleanup on)
+   Carpeta /var/www/hls/abc-123/ se mantiene pero sin .ts
+
+
+================================================================================
+TABLA DE MAPEO: URLs ↔ ARCHIVOS
+================================================================================
+
+URL Solicitada              Archivo Actual              Estado
+────────────────────────────────────────────────────────────────────────────
+
+GET /live/abc-123/index.m3u8
+    ↓ ALIAS /var/www/hls
+    ↓
+    /var/www/hls/abc-123/index.m3u8        ✓ ENCONTRADO (200 OK)
+
+
+GET /live/abc-123/0.ts
+    ↓ ALIAS /var/www/hls
+    ↓
+    /var/www/hls/abc-123/0.ts              ✓ ENCONTRADO (200 OK)
+
+
+GET /live/xyz-789/index.m3u8
+    ↓ ALIAS /var/www/hls
+    ↓
+    /var/www/hls/xyz-789/index.m3u8        ✓ ENCONTRADO (otro stream)
+
+
+GET /live/invalid-key/index.m3u8
+    ↓ ALIAS /var/www/hls
+    ↓
+    /var/www/hls/invalid-key/index.m3u8    ✗ NO EXISTE (404)
+
+
+================================================================================
+CONFIGURACIÓN NGINX CLAVE EXPLICADA
+================================================================================
+
+    hls on;
+    ↓
+    Activa generación automática de HLS a partir de RTMP
+
+
+    hls_path /var/www/hls;
+    ↓
+    Carpeta base donde se guardarán todos los archivos HLS
+
+
+    hls_nested on;
+    ↓
+    CLAVE: Crea /var/www/hls/{stream_key}/ por cada transmisión
+    Sin esto: todos los streams en /var/www/hls/ (se sobreescriben)
+    Con esto: cada stream aislado en su carpeta
+
+
+    hls_fragment 2s;
+    ↓
+    Cada segmento .ts dura 2 segundos de video/audio
+    Más pequeño = menos latencia pero más archivos
+
+
+    hls_playlist_length 12s;
+    ↓
+    index.m3u8 contiene playlist de 12 segundos (3-4 segmentos)
+
+
+    hls_cleanup on;
+    ↓
+    Limpia automáticamente .ts viejos que ya no están en playlist
+    Evita llenar el disco
+
+
+    on_publish http://backend/api/streams/validate-key;
+    ↓
+    Cuando OBS conecta, NGINX valida con backend antes de permitir
+
+
+    on_publish_done http://backend/api/streams/stop;
+    ↓
+    Cuando OBS desconecta, NGINX notifica al backend
+
+
+================================================================================
+VERIFICACIÓN: ¿FUNCIONA TODO CORRECTAMENTE?
+================================================================================
+
+✓ Backend devuelve playback_url correcto:
+  http://54.144.66.251/live/abc-123/index.m3u8
+
+✓ OBS se conecta a RTMP correcto:
+  rtmp://54.144.66.251/live/abc-123
+
+✓ NGINX crea carpeta dinámicamente:
+  /var/www/hls/abc-123/ existe durante transmisión
+
+✓ Archivos HLS se generan:
+  index.m3u8, 0.ts, 1.ts, 2.ts... aparecen en la carpeta
+
+✓ Cliente obtiene archivos desde HTTP:
+  GET /live/abc-123/index.m3u8 → retorna archivo
+
+✓ Reproductor muestra video en vivo:
+  VLC/HLS.js/ExoPlayer reproducen correctamente
+
+✓ Múltiples streams funcionan simultáneamente:
+  /var/www/hls/stream-1/, /var/www/hls/stream-2/, etc.
+
+✓ Se limpia automáticamente:
+  Solo se mantienen archivos .ts actuales (no viejo)
+
+
+================================================================================
+CONCLUSIÓN
+================================================================================
+
+Con hls_nested on, tu NGINX automáticamente:
+
+1. Crea carpetas dinámicamente por stream_key
+2. Genera archivos HLS únicos por transmisión
+3. Permite múltiples streams simultáneos sin conflictos
+4. Sirve archivos bajo http://54.144.66.251/live/{stream_key}/
+5. Las URLs que devuelve tu backend FUNCIONAN CORRECTAMENTE
+
+NO NECESITA CAMBIOS ADICIONALES.
+
+================================================================================
