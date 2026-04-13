@@ -54,10 +54,10 @@ func (s *StreamNotificationService) Unsubscribe(streamID string, eventChan <-cha
 
 	if chans, ok := s.subscribers[streamID]; ok {
 		for i, ch := range chans {
-			if ch == eventChan {
+			if ch == (chan StreamEvent)(eventChan) {
 				// Remover el canal de la lista
 				s.subscribers[streamID] = append(chans[:i], chans[i+1:]...)
-				close(ch.(chan StreamEvent))
+				close(ch)
 				break
 			}
 		}

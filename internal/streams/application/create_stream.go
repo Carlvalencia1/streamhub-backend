@@ -32,7 +32,6 @@ func (uc *CreateStream) Execute(
 ) (*domain.Stream, error) {
 
 	streamKey := uuid.NewString()
-	rtmpURL := fmt.Sprintf("%s/%s", RTMPServerURL, streamKey)
 	playbackURL := fmt.Sprintf("%s/%s.m3u8", HLSServerURL, streamKey)
 
 	stream := &domain.Stream{
