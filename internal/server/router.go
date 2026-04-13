@@ -61,7 +61,10 @@ func RegisterRoutes(r *gin.Engine, db *sql.DB) {
 		joinStreamUC,
 	)
 
-	streamsHTTP.RegisterRoutes(api, streamsHandler)
+	// Validation handler (for NGINX RTMP webhooks)
+	validationHandler := streamsHTTP.NewStreamValidationHandler(streamsRepo)
+
+	streamsHTTP.RegisterRoutes(api, streamsHandler, validationHandler)
 
 	// =========================
 	// Protected Routes Example

@@ -188,3 +188,88 @@ func (r *MySQLRepository) GetByID(ctx context.Context, streamID string) (*domain
 
 	return &s, nil
 }
+
+// GetByStreamKey retrieves a stream by its stream_key
+// Used by NGINX RTMP validation
+func (r *MySQLRepository) GetByStreamKey(ctx context.Context, streamKey string) (*domain.Stream, error) {
+
+	query := `
+	SELECT id, title, description, thumbnail_url, category,
+	       owner_id, viewers_count, is_live, started_at, ended_at, created_at, stream_key, playback_url
+	FROM streams
+	WHERE stream_key = ?
+	`
+
+	var s domain.Stream
+	var startedAt sql.NullTime
+	var endedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, streamKey).Scan(
+		&s.ID,
+		&s.Title,
+		&s.Description,
+		&s.ThumbnailURL,
+		&s.Category,
+		&s.OwnerID,
+		&s.ViewersCount,
+		&s.IsLive,
+		&startedAt,
+		&endedAt,
+		&s.CreatedAt,
+		&s.StreamKey,
+		&s.PlaybackURL,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Stream not found, return nil
+		}
+		return nil, err
+	}
+
+	if startedAt.Valid {
+		t := startedAt.Time
+		s.StartedAt = &t
+	}
+
+	if endedAt.Valid {
+		t := endedAt.Time
+		s.EndedAt = &t
+	}
+
+	return &s, nil
+}
+
+// Update updates an existing stream
+// Used by NGINX RTMP validation to mark stream as active/inactive
+func (r *MySQLRepository) Update(ctx context.Context, stream *domain.Stream) error {
+
+	query := `
+	UPDATE streams
+	SET title = ?,
+	    description = ?,
+	    thumbnail_url = ?,
+	    category = ?,
+	    owner_id = ?,
+	    viewers_count = ?,
+	    is_live = ?,
+	    stream_key = ?,
+	    playback_url = ?
+	WHERE id = ?
+	`
+
+	_, err := r.db.ExecContext(ctx, query,
+		stream.Title,
+		stream.Description,
+		stream.ThumbnailURL,
+		stream.Category,
+		stream.OwnerID,
+		stream.ViewersCount,
+		stream.IsLive,
+		stream.StreamKey,
+		stream.PlaybackURL,
+		stream.ID,
+	)
+
+	return err
+}
