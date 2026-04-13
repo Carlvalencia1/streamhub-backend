@@ -231,3 +231,52 @@ func (h *Handler) Join(c *gin.Context) {
 	logger.StreamEvent("USER_JOINED", id, "New viewer joined")
 	c.JSON(http.StatusOK, gin.H{"message": "joined stream successfully"})
 }
+
+type playbackResponse struct {
+	StreamID    string `json:"stream_id"`
+	StreamKey   string `json:"stream_key"`
+	PlaybackURL string `json:"playback_url"`
+	Type        string `json:"type"`
+	IsLive      bool   `json:"is_live"`
+}
+
+func (h *Handler) GetPlayback(c *gin.Context) {
+
+	id := c.Param("id")
+
+	if strings.TrimSpace(id) == "" {
+		logger.Warn("empty stream id for playback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "stream id is required"})
+		return
+	}
+
+	stream, err := h.getByIDUC.Execute(c, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			logger.Warn("stream not found for playback: " + id)
+			c.JSON(http.StatusNotFound, gin.H{"error": "stream not found"})
+			return
+		}
+		logger.ErrorWithContext("GetPlayback", "failed to get stream "+id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve stream"})
+		return
+	}
+
+	// Build HLS URL if PlaybackURL is not already set
+	hlsURL := stream.PlaybackURL
+	if hlsURL == "" {
+		// Fallback: construct from stream_key
+		hlsURL = fmt.Sprintf("http://54.144.66.251/hls/%s/index.m3u8", stream.StreamKey)
+	}
+
+	response := playbackResponse{
+		StreamID:    stream.ID,
+		StreamKey:   stream.StreamKey,
+		PlaybackURL: hlsURL,
+		Type:        "hls",
+		IsLive:      stream.IsLive,
+	}
+
+	logger.Debug(fmt.Sprintf("GetPlayback requested for stream: %s", id))
+	c.JSON(http.StatusOK, response)
+}

@@ -24,4 +24,5 @@ func RegisterRoutes(r *gin.RouterGroup, handler *Handler, validationHandler *Str
 	protected.PUT("/:id/start", handler.Start)
 	protected.PUT("/:id/stop", handler.Stop)
 	protected.POST("/:id/join", handler.Join)
+	protected.GET("/:id/playback", handler.GetPlayback)
 }
