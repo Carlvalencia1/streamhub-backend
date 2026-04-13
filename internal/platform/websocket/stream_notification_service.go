@@ -17,22 +17,22 @@ const (
 
 // StreamEvent representa un evento de stream
 type StreamEvent struct {
-	Type      StreamEventType `json:"type"`
-	StreamID  string          `json:"stream_id"`
-	Title     string          `json:"title"`
-	Timestamp string          `json:"timestamp"`
-	Details   map[string]interface{} `json:"details,omitempty"`
+	Type      StreamEventType            `json:"type"`
+	StreamID  string                     `json:"stream_id"`
+	Title     string                     `json:"title"`
+	Timestamp string                     `json:"timestamp"`
+	Details   map[string]interface{}     `json:"details,omitempty"`
 }
 
 // StreamNotificationService maneja notificaciones de eventos de streams
 type StreamNotificationService struct {
-	subscribers map[string][]chan StreamEvent
+	subscribers map[string]map[*chan StreamEvent]bool
 	mu          sync.RWMutex
 }
 
 func NewStreamNotificationService() *StreamNotificationService {
 	return &StreamNotificationService{
-		subscribers: make(map[string][]chan StreamEvent),
+		subscribers: make(map[string]map[*chan StreamEvent]bool),
 	}
 }
 
@@ -42,8 +42,12 @@ func (s *StreamNotificationService) Subscribe(streamID string) <-chan StreamEven
 	defer s.mu.Unlock()
 
 	eventChan := make(chan StreamEvent, 10)
-	s.subscribers[streamID] = append(s.subscribers[streamID], eventChan)
-
+	
+	if _, ok := s.subscribers[streamID]; !ok {
+		s.subscribers[streamID] = make(map[*chan StreamEvent]bool)
+	}
+	
+	s.subscribers[streamID][&eventChan] = true
 	return eventChan
 }
 
@@ -53,11 +57,12 @@ func (s *StreamNotificationService) Unsubscribe(streamID string, eventChan <-cha
 	defer s.mu.Unlock()
 
 	if chans, ok := s.subscribers[streamID]; ok {
-		for i, ch := range chans {
-			if ch == (chan StreamEvent)(eventChan) {
-				// Remover el canal de la lista
-				s.subscribers[streamID] = append(chans[:i], chans[i+1:]...)
-				close(ch)
+		// Convertir readonly channel a writable para poder cerrarlo
+		chPtr := (*chan StreamEvent)(nil)
+		for ch := range chans {
+			if ch != nil {
+				delete(chans, ch)
+				close(*ch)
 				break
 			}
 		}
@@ -70,11 +75,13 @@ func (s *StreamNotificationService) BroadcastStreamEvent(event StreamEvent) {
 	chans := s.subscribers[event.StreamID]
 	s.mu.RUnlock()
 
-	for _, ch := range chans {
-		select {
-		case ch <- event:
-		default:
-			// Si el canal está lleno, ignorar
+	for chPtr := range chans {
+		if chPtr != nil {
+			select {
+			case *chPtr <- event:
+			default:
+				// Si el canal está lleno, ignorar
+			}
 		}
 	}
 }
@@ -85,10 +92,12 @@ func (s *StreamNotificationService) BroadcastGlobalEvent(event StreamEvent) {
 	defer s.mu.RUnlock()
 
 	for _, chans := range s.subscribers {
-		for _, ch := range chans {
-			select {
-			case ch <- event:
-			default:
+		for chPtr := range chans {
+			if chPtr != nil {
+				select {
+				case *chPtr <- event:
+				default:
+				}
 			}
 		}
 	}
