@@ -57,8 +57,6 @@ func (s *StreamNotificationService) Unsubscribe(streamID string, eventChan <-cha
 	defer s.mu.Unlock()
 
 	if chans, ok := s.subscribers[streamID]; ok {
-		// Convertir readonly channel a writable para poder cerrarlo
-		chPtr := (*chan StreamEvent)(nil)
 		for ch := range chans {
 			if ch != nil {
 				delete(chans, ch)
