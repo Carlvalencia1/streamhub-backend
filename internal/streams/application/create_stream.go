@@ -3,16 +3,30 @@ package application
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/Carlvalencia1/streamhub-backend/internal/streams/domain"
 )
 
-const (
-	RTMPServerURL    = "rtmp://3.232.197.126/live"
-	HLSServerURL     = "http://3.232.197.126/live"
-)
+// Get RTMP base URL from environment or use default
+// Default: rtmp://54.144.66.251/live (Streaming server)
+func getRTMPBaseURL() string {
+	if url := os.Getenv("RTMP_BASE_URL"); url != "" {
+		return url
+	}
+	return "rtmp://54.144.66.251/live"
+}
+
+// Get HLS base URL from environment or use default
+// Default: http://54.144.66.251/live (Streaming server)
+func getHLSBaseURL() string {
+	if url := os.Getenv("HLS_BASE_URL"); url != "" {
+		return url
+	}
+	return "http://54.144.66.251/live"
+}
 
 type CreateStream struct {
 	repo domain.Repository
@@ -32,7 +46,8 @@ func (uc *CreateStream) Execute(
 ) (*domain.Stream, error) {
 
 	streamKey := uuid.NewString()
-	playbackURL := fmt.Sprintf("%s/%s.m3u8", HLSServerURL, streamKey)
+	hlsBaseURL := getHLSBaseURL()
+	playbackURL := fmt.Sprintf("%s/%s/index.m3u8", hlsBaseURL, streamKey)
 
 	stream := &domain.Stream{
 		ID:           uuid.NewString(),
