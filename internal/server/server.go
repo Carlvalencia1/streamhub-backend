@@ -32,7 +32,7 @@ func (s *Server) Start() error {
 	manager := ws.NewManager()
 
 	// Rutas HTTP normales
-	RegisterRoutes(router, s.db)
+	RegisterRoutes(router, s.cfg, s.db)
 
 	// 🔥 Rutas WebSocket con middleware JWT
 	RegisterWebSocketRoutes(

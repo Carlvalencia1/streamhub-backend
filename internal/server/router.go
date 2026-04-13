@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,10 +15,16 @@ import (
 	streamsApp "github.com/Carlvalencia1/streamhub-backend/internal/streams/application"
 	streamsHTTP "github.com/Carlvalencia1/streamhub-backend/internal/streams/interfaces/http"
 
+	notificationsInfra "github.com/Carlvalencia1/streamhub-backend/internal/notifications/infrastructure"
+	notificationsApp "github.com/Carlvalencia1/streamhub-backend/internal/notifications/application"
+	notificationsHTTP "github.com/Carlvalencia1/streamhub-backend/internal/notifications/interfaces/http"
+
+	"github.com/Carlvalencia1/streamhub-backend/internal/platform/config"
+	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/middleware"
 )
 
-func RegisterRoutes(r *gin.Engine, db *sql.DB) {
+func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 
 	api := r.Group("/api")
 
@@ -65,6 +72,36 @@ func RegisterRoutes(r *gin.Engine, db *sql.DB) {
 	validationHandler := streamsHTTP.NewStreamValidationHandler(streamsRepo)
 
 	streamsHTTP.RegisterRoutes(api, streamsHandler, validationHandler)
+
+	// =========================
+	// Notifications Module (FCM)
+	// =========================
+
+	// Inicializar Firebase Push Provider
+	var firebasePushProvider *notificationsInfra.FirebasePushProvider
+	if cfg.FirebaseCredentialsPath != "" {
+		var err error
+		firebasePushProvider, err = notificationsInfra.NewFirebasePushProvider(cfg.FirebaseCredentialsPath)
+		if err != nil {
+			logger.Error("failed to initialize Firebase provider: " + err.Error())
+			log.Fatalf("Failed to initialize Firebase: %v", err)
+		}
+	} else {
+		logger.Warn("FIREBASE_CREDENTIALS_PATH not set, push notifications will be disabled")
+	}
+
+	notificationRepo := notificationsInfra.NewDeviceTokenRepository(db)
+
+	registerTokenUC := notificationsApp.NewRegisterFcmToken(notificationRepo)
+	removeTokenUC := notificationsApp.NewRemoveFcmToken(notificationRepo)
+	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider)
+
+	notificationHandler := notificationsHTTP.NewHandler(registerTokenUC, removeTokenUC)
+
+	notificationsHTTP.RegisterRoutes(api, notificationHandler)
+
+	// Inyectar notifyStreamLiveUC en streams module (para usarlo en StartStream)
+	streamsApp.SetStreamLiveNotifier(notifyStreamLiveUC)
 
 	// =========================
 	// Protected Routes Example
