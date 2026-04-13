@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,15 @@ import (
 	"github.com/Carlvalencia1/streamhub-backend/internal/streams/application"
 	"github.com/Carlvalencia1/streamhub-backend/internal/streams/domain"
 )
+
+// Get streaming server base URL for constructing RTMP URLs
+// Uses environment variable or defaults to streaming server IP
+func getStreamingServerURL() string {
+	if url := os.Getenv("STREAM_SERVER"); url != "" {
+		return url
+	}
+	return "rtmp://54.144.66.251/live"
+}
 
 type Handler struct {
 	createUC    *application.CreateStream
@@ -102,7 +112,9 @@ func (h *Handler) Create(c *gin.Context) {
 
 	logger.StreamEvent("CREATED", stream.ID, fmt.Sprintf("Title: %s | Owner: %s", stream.Title, userID.(string)))
 
-	rtmpURL := "rtmp://54.144.66.251/live/" + stream.StreamKey
+	// Construct RTMP URL using streaming server
+	streamingServerURL := getStreamingServerURL()
+	rtmpURL := fmt.Sprintf("%s/%s", streamingServerURL, stream.StreamKey)
 
 	response := createResponse{
 		ID:          stream.ID,
