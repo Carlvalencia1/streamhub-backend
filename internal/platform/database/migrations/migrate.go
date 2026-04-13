@@ -47,18 +47,18 @@ var migrations = []struct {
     FOREIGN KEY (user_id) REFERENCES users(id)
 );`,
 	},
-	{
-		name: "004_add_streaming_fields",
-		sql: `ALTER TABLE streams 
-ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(255),
-ADD COLUMN IF NOT EXISTS category VARCHAR(100),
-ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36),
-ADD COLUMN IF NOT EXISTS viewers_count INT DEFAULT 0,
-ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS started_at TIMESTAMP NULL,
-ADD COLUMN IF NOT EXISTS stream_key VARCHAR(36) UNIQUE NOT NULL,
-ADD COLUMN IF NOT EXISTS playback_url TEXT NOT NULL;`,
-	},
+	// {
+	// 	name: "004_add_streaming_fields",
+	// 	sql: `ALTER TABLE streams 
+	// ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(255),
+	// ADD COLUMN IF NOT EXISTS category VARCHAR(100),
+	// ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36),
+	// ADD COLUMN IF NOT EXISTS viewers_count INT DEFAULT 0,
+	// ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT false,
+	// ADD COLUMN IF NOT EXISTS started_at TIMESTAMP NULL,
+	// ADD COLUMN IF NOT EXISTS stream_key VARCHAR(36) UNIQUE NOT NULL,
+	// ADD COLUMN IF NOT EXISTS playback_url TEXT NOT NULL;`,
+	// },
 }
 
 func Run(db *sql.DB) error {
