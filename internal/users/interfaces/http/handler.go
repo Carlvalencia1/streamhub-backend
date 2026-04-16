@@ -9,20 +9,23 @@ import (
 )
 
 type Handler struct {
-	registerUC *application.RegisterUser
-	loginUC    *application.LoginUser
-	listUC     *application.ListUsers
+	registerUC     *application.RegisterUser
+	loginUC        *application.LoginUser
+	listUC         *application.ListUsers
+	googleAuthUC   *application.GoogleAuthUser
 }
 
 func NewHandler(
 	registerUC *application.RegisterUser,
 	loginUC *application.LoginUser,
 	listUC *application.ListUsers,
+	googleAuthUC *application.GoogleAuthUser,
 ) *Handler {
 	return &Handler{
-		registerUC: registerUC,
-		loginUC:    loginUC,
-		listUC:     listUC,
+		registerUC:   registerUC,
+		loginUC:      loginUC,
+		listUC:       listUC,
+		googleAuthUC: googleAuthUC,
 	}
 }
 
@@ -60,6 +63,26 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	token, err := h.loginUC.Execute(c, req.Email, req.Password)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": token})
+}
+
+type googleAuthRequest struct {
+	IDToken string `json:"id_token"`
+}
+
+func (h *Handler) GoogleAuth(c *gin.Context) {
+	var req googleAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.IDToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id_token required"})
+		return
+	}
+
+	token, err := h.googleAuthUC.Execute(c, req.IDToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
