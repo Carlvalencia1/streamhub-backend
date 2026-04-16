@@ -41,8 +41,9 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	registerUC := usersApp.NewRegisterUser(userRepo)
 	loginUC := usersApp.NewLoginUser(userRepo)
 	listUC := usersApp.NewListUsers(userRepo)
+	googleAuthUC := usersApp.NewGoogleAuthUser(userRepo)
 
-	handler := usersHTTP.NewHandler(registerUC, loginUC, listUC)
+	handler := usersHTTP.NewHandler(registerUC, loginUC, listUC, googleAuthUC)
 
 	usersHTTP.RegisterRoutes(api, handler)
 
