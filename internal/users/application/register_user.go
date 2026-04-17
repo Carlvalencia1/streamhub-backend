@@ -17,11 +17,14 @@ func NewRegisterUser(repo domain.Repository) *RegisterUser {
 	return &RegisterUser{repo: repo}
 }
 
-func (uc *RegisterUser) Execute(ctx context.Context, username, email, password string) error {
-
+func (uc *RegisterUser) Execute(ctx context.Context, username, email, password, role string) error {
 	hash, err := security.HashPassword(password)
 	if err != nil {
 		return err
+	}
+
+	if role == "" {
+		role = "viewer"
 	}
 
 	user := &domain.User{
@@ -29,6 +32,7 @@ func (uc *RegisterUser) Execute(ctx context.Context, username, email, password s
 		Username: username,
 		Email:    email,
 		Password: hash,
+		Role:     role,
 	}
 
 	return uc.repo.Create(ctx, user)

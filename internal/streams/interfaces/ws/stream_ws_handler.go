@@ -66,7 +66,7 @@ func (h *StreamHandler) Handle(c *gin.Context) {
 		switch msg.Action {
 		case "create":
 			// Crear stream
-			err := h.createUC.Execute(c, msg.Title, msg.Description, msg.Thumbnail, msg.Category, userID)
+			_, err := h.createUC.Execute(c, msg.Title, msg.Description, msg.Thumbnail, msg.Category, userID)
 			if err != nil {
 				conn.WriteJSON(gin.H{"error": "failed to create stream"})
 				continue

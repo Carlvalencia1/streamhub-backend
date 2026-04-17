@@ -69,7 +69,7 @@ var migrations = []struct {
 	},
 	// {
 	// 	name: "004_add_streaming_fields",
-	// 	sql: `ALTER TABLE streams 
+	// 	sql: `ALTER TABLE streams
 	// ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(255),
 	// ADD COLUMN IF NOT EXISTS category VARCHAR(100),
 	// ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36),
@@ -79,6 +79,29 @@ var migrations = []struct {
 	// ADD COLUMN IF NOT EXISTS stream_key VARCHAR(36) UNIQUE NOT NULL,
 	// ADD COLUMN IF NOT EXISTS playback_url TEXT NOT NULL;`,
 	// },
+	{
+		name: "006_add_role_to_users",
+		sql:  `ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'viewer';`,
+	},
+	{
+		name: "007_create_followers_table",
+		sql: `CREATE TABLE IF NOT EXISTS followers (
+    id          VARCHAR(36) PRIMARY KEY,
+    follower_id VARCHAR(36) NOT NULL,
+    streamer_id VARCHAR(36) NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_follow (follower_id, streamer_id),
+    FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (streamer_id) REFERENCES users(id) ON DELETE CASCADE
+);`,
+	},
+	{
+		name: "008_add_profile_fields_to_users",
+		sql: `ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS nickname VARCHAR(100) NULL,
+    ADD COLUMN IF NOT EXISTS bio TEXT NULL,
+    ADD COLUMN IF NOT EXISTS location VARCHAR(100) NULL;`,
+	},
 }
 
 func Run(db *sql.DB) error {
