@@ -20,21 +20,15 @@ func NewNotifyStreamLive(repo domain.NotificationRepository, provider domain.Pus
 	}
 }
 
-// NotifyStreamLiveInput estructura esperada en Execute
 type NotifyStreamLiveInput struct {
 	StreamID    string
 	StreamTitle string
 	OwnerUserID string
 }
 
-// Execute envía notificación push a todos los usuarios excepto el owner
-// cuando un stream inicia (is_live = true)
-// Acepta interface{} para compatibilidad con StreamLiveNotifier
 func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) error {
-	// Convertir input genérico a NotifyStreamLiveInput
 	var notifyInput NotifyStreamLiveInput
 
-	// Si es map, extraer valores
 	if m, ok := input.(map[string]interface{}); ok {
 		if streamID, ok := m["stream_id"].(string); ok {
 			notifyInput.StreamID = streamID
@@ -46,29 +40,23 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 			notifyInput.OwnerUserID = ownerID
 		}
 	} else if typed, ok := input.(NotifyStreamLiveInput); ok {
-		// Si ya es del tipo correcto
 		notifyInput = typed
 	} else {
 		logger.Warn("invalid input type for NotifyStreamLive")
 		return ErrInvalidInput
 	}
 
-	logger.Debug(fmt.Sprintf("NotifyStreamLive usecase started for stream: %s", notifyInput.StreamID))
-
-	// Validación
 	if notifyInput.StreamID == "" || notifyInput.StreamTitle == "" || notifyInput.OwnerUserID == "" {
 		logger.Warn("invalid input for NotifyStreamLive")
 		return ErrInvalidInput
 	}
 
-	// Si no hay provider de Firebase (no configurado), retornar sin error
 	if uc.provider == nil {
 		logger.Warn("Firebase provider not initialized, skipping push notifications")
 		return nil
 	}
 
-	// 1. Obtener todos los tokens válidos excepto del owner
-	tokens, err := uc.repo.GetDeviceTokensByUsersExcept(ctx, notifyInput.OwnerUserID)
+	tokens, err := uc.repo.GetDeviceTokensByFollowers(ctx, notifyInput.OwnerUserID)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to get device tokens: %v", err))
 		return err
@@ -79,7 +67,6 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 		return nil
 	}
 
-	// 2. Construir payload (debe coincidir exacto con Android)
 	tokenStrings := make([]string, len(tokens))
 	for i, t := range tokens {
 		tokenStrings[i] = t.Token
@@ -97,7 +84,6 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 		},
 	}
 
-	// 3. Enviar multicast
 	if err := uc.provider.SendMulticast(ctx, tokenStrings, payload); err != nil {
 		logger.Error(fmt.Sprintf("failed to send multicast notification: %v", err))
 		return err
@@ -105,7 +91,6 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 
 	logger.Info(fmt.Sprintf("stream live notification sent to %d devices for stream: %s", len(tokenStrings), notifyInput.StreamID))
 
-	// 4. Actualizar last_used_at para los tokens (best effort)
 	for _, token := range tokens {
 		_ = uc.repo.UpdateTokenLastUsed(ctx, token.Token)
 	}

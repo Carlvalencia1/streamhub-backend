@@ -19,7 +19,6 @@ func NewDeviceTokenRepository(db *sql.DB) *DeviceTokenRepository {
 	return &DeviceTokenRepository{db: db}
 }
 
-// SaveDeviceToken guarda o actualiza un token (upsert)
 func (r *DeviceTokenRepository) SaveDeviceToken(ctx context.Context, token *domain.DeviceToken) error {
 	if token.ID == "" {
 		token.ID = uuid.NewString()
@@ -63,7 +62,6 @@ func (r *DeviceTokenRepository) SaveDeviceToken(ctx context.Context, token *doma
 	return nil
 }
 
-// RemoveDeviceToken elimina un token específico de un usuario
 func (r *DeviceTokenRepository) RemoveDeviceToken(ctx context.Context, userID, token string) error {
 	query := `DELETE FROM device_tokens WHERE user_id = ? AND token = ?`
 
@@ -81,7 +79,6 @@ func (r *DeviceTokenRepository) RemoveDeviceToken(ctx context.Context, userID, t
 	return nil
 }
 
-// GetDeviceTokensByUser obtiene todos los tokens válidos de un usuario
 func (r *DeviceTokenRepository) GetDeviceTokensByUser(ctx context.Context, userID string) ([]*domain.DeviceToken, error) {
 	query := `
 		SELECT id, user_id, token, platform, device_id, app_version, is_valid, last_used_at, created_at, updated_at
@@ -99,8 +96,6 @@ func (r *DeviceTokenRepository) GetDeviceTokensByUser(ctx context.Context, userI
 	return r.scanDeviceTokens(rows)
 }
 
-// GetDeviceTokensByUsersExcept obtiene tokens válidos de todos los usuarios excepto uno
-// Usado para notificar a otros usuarios cuando alguien inicia stream
 func (r *DeviceTokenRepository) GetDeviceTokensByUsersExcept(ctx context.Context, excludeUserID string) ([]*domain.DeviceToken, error) {
 	query := `
 		SELECT id, user_id, token, platform, device_id, app_version, is_valid, last_used_at, created_at, updated_at
@@ -119,8 +114,24 @@ func (r *DeviceTokenRepository) GetDeviceTokensByUsersExcept(ctx context.Context
 	return r.scanDeviceTokens(rows)
 }
 
-// MarkTokenAsInvalid marca un token como inválido
-// Se usa cuando Firebase reporta que el token no es válido
+func (r *DeviceTokenRepository) GetDeviceTokensByFollowers(ctx context.Context, streamerID string) ([]*domain.DeviceToken, error) {
+	query := `
+		SELECT dt.id, dt.user_id, dt.token, dt.platform, dt.device_id, dt.app_version,
+		       dt.is_valid, dt.last_used_at, dt.created_at, dt.updated_at
+		FROM device_tokens dt
+		INNER JOIN followers f ON f.follower_id = dt.user_id
+		WHERE f.streamer_id = ? AND dt.is_valid = true
+		ORDER BY dt.user_id, dt.created_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, streamerID)
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to get device tokens for followers of %s: %v", streamerID, err))
+		return nil, err
+	}
+	defer rows.Close()
+	return r.scanDeviceTokens(rows)
+}
+
 func (r *DeviceTokenRepository) MarkTokenAsInvalid(ctx context.Context, token string) error {
 	query := `UPDATE device_tokens SET is_valid = false, updated_at = NOW() WHERE token = ?`
 
@@ -138,7 +149,6 @@ func (r *DeviceTokenRepository) MarkTokenAsInvalid(ctx context.Context, token st
 	return nil
 }
 
-// RemoveInvalidTokens elimina todos los tokens marcados como inválidos
 func (r *DeviceTokenRepository) RemoveInvalidTokens(ctx context.Context) error {
 	query := `DELETE FROM device_tokens WHERE is_valid = false`
 
@@ -154,7 +164,6 @@ func (r *DeviceTokenRepository) RemoveInvalidTokens(ctx context.Context) error {
 	return nil
 }
 
-// UpdateTokenLastUsed actualiza el timestamp de último uso
 func (r *DeviceTokenRepository) UpdateTokenLastUsed(ctx context.Context, token string) error {
 	query := `UPDATE device_tokens SET last_used_at = NOW() WHERE token = ?`
 
@@ -167,7 +176,6 @@ func (r *DeviceTokenRepository) UpdateTokenLastUsed(ctx context.Context, token s
 	return nil
 }
 
-// scanDeviceTokens helper para mapear resultados SQL a DeviceToken
 func (r *DeviceTokenRepository) scanDeviceTokens(rows *sql.Rows) ([]*domain.DeviceToken, error) {
 	var tokens []*domain.DeviceToken
 
