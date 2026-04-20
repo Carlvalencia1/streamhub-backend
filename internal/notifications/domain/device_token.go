@@ -2,21 +2,19 @@ package domain
 
 import "time"
 
-// DeviceToken representa un token de dispositivo registrado para FCM
 type DeviceToken struct {
-	ID         string
-	UserID     string
-	Token      string
-	Platform   string    // "android", "ios"
-	DeviceID   string    // ID único del dispositivo
-	AppVersion string    // Versión de la app
-	IsValid    bool      // Token válido (no unregistered/invalid)
-	LastUsedAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	Token      string     `json:"token"`
+	Platform   string     `json:"platform"`
+	DeviceID   string     `json:"device_id"`
+	AppVersion string     `json:"app_version"`
+	IsValid    bool       `json:"is_valid"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-// NewDeviceToken crea una nueva instancia de DeviceToken
 func NewDeviceToken(id, userID, token, platform, deviceID, appVersion string) *DeviceToken {
 	now := time.Now()
 	return &DeviceToken{

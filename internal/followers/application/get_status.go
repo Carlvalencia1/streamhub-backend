@@ -34,3 +34,27 @@ func NewGetFollowing(repo domain.Repository) *GetFollowing {
 func (uc *GetFollowing) Execute(ctx context.Context, followerID string) ([]string, error) {
 	return uc.repo.GetFollowingIDs(ctx, followerID)
 }
+
+type GetFollowerUsers struct {
+	repo domain.Repository
+}
+
+func NewGetFollowerUsers(repo domain.Repository) *GetFollowerUsers {
+	return &GetFollowerUsers{repo: repo}
+}
+
+func (uc *GetFollowerUsers) Execute(ctx context.Context, streamerID string) ([]*domain.UserSummary, error) {
+	return uc.repo.GetFollowerUsers(ctx, streamerID)
+}
+
+type GetFollowingUsers struct {
+	repo domain.Repository
+}
+
+func NewGetFollowingUsers(repo domain.Repository) *GetFollowingUsers {
+	return &GetFollowingUsers{repo: repo}
+}
+
+func (uc *GetFollowingUsers) Execute(ctx context.Context, followerID string) ([]*domain.UserSummary, error) {
+	return uc.repo.GetFollowingUsers(ctx, followerID)
+}

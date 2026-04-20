@@ -71,6 +71,48 @@ func (r *MySQLRepository) GetFollowingIDs(ctx context.Context, followerID string
 	return ids, rows.Err()
 }
 
+func (r *MySQLRepository) GetFollowerUsers(ctx context.Context, streamerID string) ([]*domain.UserSummary, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT u.id, u.username, u.nickname, u.avatar_url
+		 FROM followers f
+		 INNER JOIN users u ON u.id = f.follower_id
+		 WHERE f.streamer_id = ?`,
+		streamerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanUserSummaries(rows)
+}
+
+func (r *MySQLRepository) GetFollowingUsers(ctx context.Context, followerID string) ([]*domain.UserSummary, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT u.id, u.username, u.nickname, u.avatar_url
+		 FROM followers f
+		 INNER JOIN users u ON u.id = f.streamer_id
+		 WHERE f.follower_id = ?`,
+		followerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanUserSummaries(rows)
+}
+
+func scanUserSummaries(rows *sql.Rows) ([]*domain.UserSummary, error) {
+	var users []*domain.UserSummary
+	for rows.Next() {
+		var u domain.UserSummary
+		if err := rows.Scan(&u.ID, &u.Username, &u.Nickname, &u.AvatarURL); err != nil {
+			return nil, err
+		}
+		users = append(users, &u)
+	}
+	return users, rows.Err()
+}
+
 func (r *MySQLRepository) GetFollowerIDs(ctx context.Context, streamerID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT follower_id FROM followers WHERE streamer_id = ?`,

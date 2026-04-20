@@ -10,6 +10,8 @@ func RegisterRoutes(api *gin.RouterGroup, handler *Handler) {
 	g.Use(middleware.AuthMiddleware())
 
 	g.GET("/following", handler.GetFollowing)
+	g.GET("/my-followers", handler.GetMyFollowers)
+	g.GET("/my-following", handler.GetMyFollowing)
 	g.POST("/:streamerId/follow", handler.Follow)
 	g.DELETE("/:streamerId/unfollow", handler.Unfollow)
 	g.GET("/:streamerId/status", handler.GetStatus)

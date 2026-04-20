@@ -33,14 +33,14 @@ VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
 
 func (r *MySQLRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
-SELECT id, username, email, password, role, nickname, bio, location, avatar_url, created_at, updated_at
+SELECT id, username, email, password, role, nickname, bio, location, avatar_url, banner_url, created_at, updated_at
 FROM users WHERE email = ?
 `
 	row := r.db.QueryRowContext(ctx, query, email)
 	var user domain.User
 	err := row.Scan(
 		&user.ID, &user.Username, &user.Email, &user.Password, &user.Role,
-		&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL,
+		&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL, &user.BannerURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
@@ -51,14 +51,14 @@ FROM users WHERE email = ?
 
 func (r *MySQLRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	query := `
-SELECT id, username, email, password, role, nickname, bio, location, avatar_url, created_at, updated_at
+SELECT id, username, email, password, role, nickname, bio, location, avatar_url, banner_url, created_at, updated_at
 FROM users WHERE id = ?
 `
 	row := r.db.QueryRowContext(ctx, query, id)
 	var user domain.User
 	err := row.Scan(
 		&user.ID, &user.Username, &user.Email, &user.Password, &user.Role,
-		&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL,
+		&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL, &user.BannerURL,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
@@ -80,9 +80,17 @@ func (r *MySQLRepository) UpdateProfile(ctx context.Context, userID string, nick
 	return err
 }
 
+func (r *MySQLRepository) UpdateBanner(ctx context.Context, userID string, bannerURL *string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET banner_url = ?, updated_at = NOW() WHERE id = ?`,
+		bannerURL, userID,
+	)
+	return err
+}
+
 func (r *MySQLRepository) List(ctx context.Context) ([]*domain.User, error) {
 	query := `
-SELECT id, username, email, password, role, nickname, bio, location, avatar_url, created_at, updated_at
+SELECT id, username, email, password, role, nickname, bio, location, avatar_url, banner_url, created_at, updated_at
 FROM users
 `
 	rows, err := r.db.QueryContext(ctx, query)
@@ -96,7 +104,7 @@ FROM users
 		var user domain.User
 		err := rows.Scan(
 			&user.ID, &user.Username, &user.Email, &user.Password, &user.Role,
-			&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL,
+			&user.Nickname, &user.Bio, &user.Location, &user.AvatarURL, &user.BannerURL,
 			&user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {

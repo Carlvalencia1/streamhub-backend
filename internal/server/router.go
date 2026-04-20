@@ -23,6 +23,14 @@ import (
 	followersApp "github.com/Carlvalencia1/streamhub-backend/internal/followers/application"
 	followersHTTP "github.com/Carlvalencia1/streamhub-backend/internal/followers/interfaces/http"
 
+	communitiesInfra "github.com/Carlvalencia1/streamhub-backend/internal/communities/infrastructure"
+	communitiesHTTP "github.com/Carlvalencia1/streamhub-backend/internal/communities/interfaces/http"
+
+	channelpostsInfra "github.com/Carlvalencia1/streamhub-backend/internal/channelposts/infrastructure"
+	channelpostsHTTP "github.com/Carlvalencia1/streamhub-backend/internal/channelposts/interfaces/http"
+
+	uploadHTTP "github.com/Carlvalencia1/streamhub-backend/internal/upload/interfaces/http"
+
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/config"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/middleware"
@@ -76,6 +84,7 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 			"bio":             user.Bio,
 			"location":        user.Location,
 			"avatar_url":      user.AvatarURL,
+			"banner_url":      user.BannerURL,
 			"followers_count": followersCount,
 			"following_count": followingCount,
 		})
@@ -84,9 +93,10 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	protected.PUT("/role", handler.SetRole)
 
 	type updateProfileRequest struct {
-		Nickname *string `json:"nickname"`
-		Bio      *string `json:"bio"`
-		Location *string `json:"location"`
+		Nickname  *string `json:"nickname"`
+		Bio       *string `json:"bio"`
+		Location  *string `json:"location"`
+		BannerURL *string `json:"banner_url"`
 	}
 	protected.PUT("/profile", func(c *gin.Context) {
 		userID := c.GetString("user_id")
@@ -98,6 +108,9 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 		if err := userRepo.UpdateProfile(c, userID, req.Nickname, req.Bio, req.Location); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 			return
+		}
+		if req.BannerURL != nil {
+			_ = userRepo.UpdateBanner(c, userID, req.BannerURL)
 		}
 		c.JSON(200, gin.H{"message": "profile updated"})
 	})
@@ -152,7 +165,22 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	unfollowUC := followersApp.NewUnfollow(followerRepo)
 	getStatusUC := followersApp.NewGetFollowerStatus(followerRepo)
 	getFollowingUC := followersApp.NewGetFollowing(followerRepo)
+	getFollowerUsersUC := followersApp.NewGetFollowerUsers(followerRepo)
+	getFollowingUsersUC := followersApp.NewGetFollowingUsers(followerRepo)
 
-	followersHandler := followersHTTP.NewHandler(followUC, unfollowUC, getStatusUC, getFollowingUC)
+	followersHandler := followersHTTP.NewHandler(followUC, unfollowUC, getStatusUC, getFollowingUC, getFollowerUsersUC, getFollowingUsersUC)
 	followersHTTP.RegisterRoutes(api, followersHandler)
+
+	communityRepo := communitiesInfra.NewMySQLRepository(db)
+	communityHandler := communitiesHTTP.NewHandler(communityRepo)
+	communitiesHTTP.RegisterRoutes(api, communityHandler)
+
+	channelPostRepo := channelpostsInfra.NewMySQLRepository(db)
+	channelPostHandler := channelpostsHTTP.NewHandler(channelPostRepo)
+	channelpostsHTTP.RegisterRoutes(api, channelPostHandler)
+
+	uploadHandler := uploadHTTP.NewHandler()
+	uploadHTTP.RegisterRoutes(api, uploadHandler)
+
+	r.Static("/uploads", "./uploads")
 }

@@ -7,14 +7,17 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Carlvalencia1/streamhub-backend/internal/followers/application"
+	"github.com/Carlvalencia1/streamhub-backend/internal/followers/domain"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 )
 
 type Handler struct {
-	followUC        *application.Follow
-	unfollowUC      *application.Unfollow
-	getStatusUC     *application.GetFollowerStatus
-	getFollowingUC  *application.GetFollowing
+	followUC           *application.Follow
+	unfollowUC         *application.Unfollow
+	getStatusUC        *application.GetFollowerStatus
+	getFollowingUC     *application.GetFollowing
+	getFollowerUsersUC *application.GetFollowerUsers
+	getFollowingUsersUC *application.GetFollowingUsers
 }
 
 func NewHandler(
@@ -22,12 +25,16 @@ func NewHandler(
 	unfollowUC *application.Unfollow,
 	getStatusUC *application.GetFollowerStatus,
 	getFollowingUC *application.GetFollowing,
+	getFollowerUsersUC *application.GetFollowerUsers,
+	getFollowingUsersUC *application.GetFollowingUsers,
 ) *Handler {
 	return &Handler{
-		followUC:       followUC,
-		unfollowUC:     unfollowUC,
-		getStatusUC:    getStatusUC,
-		getFollowingUC: getFollowingUC,
+		followUC:            followUC,
+		unfollowUC:          unfollowUC,
+		getStatusUC:         getStatusUC,
+		getFollowingUC:      getFollowingUC,
+		getFollowerUsersUC:  getFollowerUsersUC,
+		getFollowingUsersUC: getFollowingUsersUC,
 	}
 }
 
@@ -90,4 +97,30 @@ func (h *Handler) GetFollowing(c *gin.Context) {
 		ids = []string{}
 	}
 	c.JSON(http.StatusOK, gin.H{"streamer_ids": ids})
+}
+
+func (h *Handler) GetMyFollowers(c *gin.Context) {
+	userID := c.GetString("user_id")
+	users, err := h.getFollowerUsersUC.Execute(c, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if users == nil {
+		users = []*domain.UserSummary{}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
+func (h *Handler) GetMyFollowing(c *gin.Context) {
+	userID := c.GetString("user_id")
+	users, err := h.getFollowingUsersUC.Execute(c, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if users == nil {
+		users = []*domain.UserSummary{}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
 }
