@@ -314,6 +314,38 @@ func (r *MySQLRepository) computeExpiry(channelID string, ctx context.Context) *
 	return &t
 }
 
+func (r *MySQLRepository) AddReaction(ctx context.Context, messageID, userID, emoji string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO message_reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, NOW())
+		 ON DUPLICATE KEY UPDATE emoji = VALUES(emoji), created_at = NOW()`,
+		messageID, userID, emoji,
+	)
+	return err
+}
+
+func (r *MySQLRepository) GetMyReactions(ctx context.Context, channelID, userID string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT mr.message_id, mr.emoji
+		 FROM message_reactions mr
+		 INNER JOIN channel_messages cm ON cm.id = mr.message_id
+		 WHERE cm.channel_id = ? AND mr.user_id = ?`,
+		channelID, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]string{}
+	for rows.Next() {
+		var msgID, emoji string
+		if err := rows.Scan(&msgID, &emoji); err != nil {
+			return nil, err
+		}
+		result[msgID] = emoji
+	}
+	return result, rows.Err()
+}
+
 func scanCommunities(rows *sql.Rows) ([]*domain.Community, error) {
 	var list []*domain.Community
 	for rows.Next() {

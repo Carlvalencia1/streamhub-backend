@@ -205,6 +205,7 @@ func (h *Handler) RemoveMember(c *gin.Context) {
 }
 
 func (h *Handler) GetMessages(c *gin.Context) {
+	userID := c.GetString("user_id")
 	channelID := c.Param("channelId")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -220,15 +221,35 @@ func (h *Handler) GetMessages(c *gin.Context) {
 		msgs = []*domain.ChannelMessage{}
 	}
 
+	myReactions, _ := h.repo.GetMyReactions(c, channelID, userID)
 	for _, msg := range msgs {
 		if msg.PollID != nil {
-			poll, err := h.repo.GetPoll(c, *msg.PollID)
-			if err == nil {
+			if poll, err := h.repo.GetPoll(c, *msg.PollID); err == nil {
 				msg.Poll = poll
 			}
 		}
+		if emoji, ok := myReactions[msg.ID]; ok {
+			msg.MyReaction = &emoji
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"messages": msgs})
+}
+
+func (h *Handler) ReactToMessage(c *gin.Context) {
+	userID := c.GetString("user_id")
+	messageID := c.Param("messageId")
+	var req struct {
+		Emoji string `json:"emoji" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.repo.AddReaction(c, messageID, userID, req.Emoji); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"emoji": req.Emoji})
 }
 
 func (h *Handler) SendMessage(c *gin.Context) {

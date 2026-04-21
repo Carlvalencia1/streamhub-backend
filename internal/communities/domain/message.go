@@ -14,18 +14,19 @@ const (
 )
 
 type ChannelMessage struct {
-	ID        string      `json:"id"`
-	ChannelID string      `json:"channel_id"`
-	UserID    string      `json:"user_id"`
-	Username  string      `json:"username"`
-	AvatarURL *string     `json:"avatar_url"`
-	Type      MessageType `json:"type"`
-	Content   string      `json:"content"`
-	MediaURL  *string     `json:"media_url"`
-	PollID    *string     `json:"poll_id"`
-	Poll      *Poll       `json:"poll"`
-	ExpiresAt *time.Time  `json:"expires_at"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID         string      `json:"id"`
+	ChannelID  string      `json:"channel_id"`
+	UserID     string      `json:"user_id"`
+	Username   string      `json:"username"`
+	AvatarURL  *string     `json:"avatar_url"`
+	Type       MessageType `json:"type"`
+	Content    string      `json:"content"`
+	MediaURL   *string     `json:"media_url"`
+	PollID     *string     `json:"poll_id"`
+	Poll       *Poll       `json:"poll"`
+	MyReaction *string     `json:"my_reaction"`
+	ExpiresAt  *time.Time  `json:"expires_at"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 type Poll struct {

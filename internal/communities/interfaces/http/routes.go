@@ -24,6 +24,7 @@ func RegisterRoutes(api *gin.RouterGroup, handler *Handler) {
 	g.POST("/:id/channels/:channelId/messages", handler.SendMessage)
 	g.POST("/:id/channels/:channelId/messages/poll", handler.SendPollMessage)
 	g.DELETE("/:id/channels/:channelId/messages/:messageId", handler.DeleteMessage)
+	g.POST("/:id/channels/:channelId/messages/:messageId/react", handler.ReactToMessage)
 	g.PUT("/:id/channels/:channelId/settings", handler.SetDisappearing)
 	g.POST("/polls/:pollId/vote", handler.VotePoll)
 }

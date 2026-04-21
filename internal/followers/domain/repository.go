@@ -3,10 +3,10 @@ package domain
 import "context"
 
 type UserSummary struct {
-	ID        string
-	Username  string
-	Nickname  *string
-	AvatarURL *string
+	ID        string  `json:"id"`
+	Username  string  `json:"username"`
+	Nickname  *string `json:"nickname"`
+	AvatarURL *string `json:"avatar_url"`
 }
 
 type Repository interface {

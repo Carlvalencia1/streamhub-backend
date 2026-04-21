@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -40,6 +41,7 @@ func NewHandler(
 
 func (h *Handler) Follow(c *gin.Context) {
 	followerID := c.GetString("user_id")
+	followerUsername := c.GetString("username")
 	streamerID := strings.TrimSpace(c.Param("streamerId"))
 	if streamerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "streamer id required"})
@@ -49,6 +51,14 @@ func (h *Handler) Follow(c *gin.Context) {
 		logger.Error("follow failed: " + err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if notifier := application.GetNewFollowerNotifier(); notifier != nil {
+		go func() {
+			_ = notifier.Execute(context.Background(), map[string]interface{}{
+				"streamer_id":       streamerID,
+				"follower_username": followerUsername,
+			})
+		}()
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "followed"})
 }

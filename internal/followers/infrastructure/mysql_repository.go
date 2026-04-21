@@ -5,7 +5,6 @@ import (
 	"database/sql"
 
 	"github.com/Carlvalencia1/streamhub-backend/internal/followers/domain"
-	"github.com/google/uuid"
 )
 
 type MySQLRepository struct {
@@ -18,8 +17,8 @@ func NewMySQLRepository(db *sql.DB) *MySQLRepository {
 
 func (r *MySQLRepository) Follow(ctx context.Context, followerID, streamerID string) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT IGNORE INTO followers (id, follower_id, streamer_id) VALUES (?, ?, ?)`,
-		uuid.NewString(), followerID, streamerID,
+		`INSERT IGNORE INTO followers (follower_id, streamer_id) VALUES (?, ?)`,
+		followerID, streamerID,
 	)
 	return err
 }

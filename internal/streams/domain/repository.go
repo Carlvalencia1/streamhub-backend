@@ -11,6 +11,7 @@ type StreamRepository interface {
 	StartStream(ctx context.Context, streamID string) error
 	StopStream(ctx context.Context, streamID string) error
 	JoinStream(ctx context.Context, streamID string) error
+	SetRecordingURL(ctx context.Context, streamKey, recordingURL string) error
 }
 
 // Deprecated: Use StreamRepository instead
@@ -21,4 +22,5 @@ type Repository interface {
 	StartStream(ctx context.Context, streamID string) error
 	StopStream(ctx context.Context, streamID string) error
 	JoinStream(ctx context.Context, streamID string) error
+	SetRecordingURL(ctx context.Context, streamKey, recordingURL string) error
 }

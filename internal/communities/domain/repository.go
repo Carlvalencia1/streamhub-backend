@@ -32,4 +32,7 @@ type Repository interface {
 
 	GetChannelSettings(ctx context.Context, channelID string) (*ChannelSettings, error)
 	UpsertChannelSettings(ctx context.Context, s *ChannelSettings) error
+
+	AddReaction(ctx context.Context, messageID, userID, emoji string) error
+	GetMyReactions(ctx context.Context, channelID, userID string) (map[string]string, error)
 }

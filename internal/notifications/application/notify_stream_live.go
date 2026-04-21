@@ -6,17 +6,20 @@ import (
 
 	"github.com/Carlvalencia1/streamhub-backend/internal/notifications/domain"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
+	usersDomain "github.com/Carlvalencia1/streamhub-backend/internal/users/domain"
 )
 
 type NotifyStreamLive struct {
 	repo     domain.NotificationRepository
 	provider domain.PushProvider
+	userRepo usersDomain.Repository
 }
 
-func NewNotifyStreamLive(repo domain.NotificationRepository, provider domain.PushProvider) *NotifyStreamLive {
+func NewNotifyStreamLive(repo domain.NotificationRepository, provider domain.PushProvider, userRepo usersDomain.Repository) *NotifyStreamLive {
 	return &NotifyStreamLive{
 		repo:     repo,
 		provider: provider,
+		userRepo: userRepo,
 	}
 }
 
@@ -72,15 +75,22 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 		tokenStrings[i] = t.Token
 	}
 
+	streamerName := notifyInput.StreamTitle
+	if uc.userRepo != nil {
+		if u, err := uc.userRepo.GetByID(ctx, notifyInput.OwnerUserID); err == nil && u != nil {
+			streamerName = u.Username
+		}
+	}
+
 	payload := &domain.PushPayload{
 		Title: "Stream en vivo",
-		Body:  fmt.Sprintf("%s está transmitiendo", notifyInput.StreamTitle),
+		Body:  fmt.Sprintf("%s está en vivo", streamerName),
 		Data: map[string]string{
 			"type":         "stream_live",
 			"stream_id":    notifyInput.StreamID,
 			"stream_title": notifyInput.StreamTitle,
 			"title":        "Stream en vivo",
-			"message":      fmt.Sprintf("%s está en vivo", notifyInput.StreamTitle),
+			"message":      fmt.Sprintf("%s está en vivo", streamerName),
 		},
 	}
 

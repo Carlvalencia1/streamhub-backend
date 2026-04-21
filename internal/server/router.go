@@ -131,6 +131,7 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 		startStreamUC,
 		stopStreamUC,
 		joinStreamUC,
+		streamsRepo,
 	)
 
 	validationHandler := streamsHTTP.NewStreamValidationHandler(streamsRepo)
@@ -152,12 +153,15 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 
 	registerTokenUC := notificationsApp.NewRegisterFcmToken(notificationRepo)
 	removeTokenUC := notificationsApp.NewRemoveFcmToken(notificationRepo)
-	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider)
+	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider, userRepo)
 
 	notificationHandler := notificationsHTTP.NewHandler(registerTokenUC, removeTokenUC)
 	notificationsHTTP.RegisterRoutes(api, notificationHandler)
 
 	streamsApp.SetStreamLiveNotifier(notifyStreamLiveUC)
+
+	notifyNewFollowerUC := notificationsApp.NewNotifyNewFollower(notificationRepo, firebasePushProvider)
+	followersApp.SetNewFollowerNotifier(notifyNewFollowerUC)
 
 	followerRepo := followersInfra.NewMySQLRepository(db)
 
