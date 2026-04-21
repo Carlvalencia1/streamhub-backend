@@ -26,18 +26,37 @@ type ValidateStreamKeyResponse struct {
 	Valid bool `json:"valid"`
 }
 
-// ValidateKey validates stream_key from NGINX RTMP on_publish event
-// NGINX will only allow publishing if this returns 200 OK
-// URL: POST /api/streams/validate-key?app=live&name={stream_key}
+// ValidateKey validates stream_key from SRS on_publish event
+// SRS sends POST with JSON body; NGINX RTMP uses query params
+// URL: POST /api/streams/validate-key
 func (h *StreamValidationHandler) ValidateKey(c *gin.Context) {
+	// Try query params first (NGINX RTMP style)
 	streamKey := c.Query("name")
 	app := c.Query("app")
 
-	log.Printf("[StreamValidation] Received validation request: app=%s, name=%s", app, streamKey)
+	// If not in query params, try SRS JSON body
+	if streamKey == "" {
+		var body struct {
+			Stream string `json:"stream"`
+			App    string `json:"app"`
+		}
+		if err := c.ShouldBindJSON(&body); err == nil {
+			streamKey = body.Stream
+			if app == "" {
+				app = body.App
+			}
+		}
+	}
 
-	if app == "" || streamKey == "" {
-		log.Printf("[StreamValidation] Missing app or name parameter")
-		response.Error(c, http.StatusBadRequest, "Missing app or name")
+	if app == "" {
+		app = "live"
+	}
+
+	log.Printf("[StreamValidation] Received validation request: app=%s, stream=%s", app, streamKey)
+
+	if streamKey == "" {
+		log.Printf("[StreamValidation] Missing stream key parameter")
+		response.Error(c, http.StatusBadRequest, "Missing stream key")
 		return
 	}
 
@@ -72,18 +91,37 @@ func (h *StreamValidationHandler) ValidateKey(c *gin.Context) {
 	response.JSON(c, http.StatusOK, ValidateStreamKeyResponse{Valid: true})
 }
 
-// StopStream handles NGINX RTMP on_publish_done event
+// StopStream handles SRS on_unpublish event
 // Called when a stream publisher disconnects
-// URL: POST /api/streams/stop?app=live&name={stream_key}
+// URL: POST /api/streams/stop
 func (h *StreamValidationHandler) StopStream(c *gin.Context) {
+	// Try query params first (NGINX RTMP style)
 	streamKey := c.Query("name")
 	app := c.Query("app")
 
-	log.Printf("[StreamStop] Received stop request: app=%s, name=%s", app, streamKey)
+	// If not in query params, try SRS JSON body
+	if streamKey == "" {
+		var body struct {
+			Stream string `json:"stream"`
+			App    string `json:"app"`
+		}
+		if err := c.ShouldBindJSON(&body); err == nil {
+			streamKey = body.Stream
+			if app == "" {
+				app = body.App
+			}
+		}
+	}
 
-	if app == "" || streamKey == "" {
-		log.Printf("[StreamStop] Missing app or name parameter")
-		response.Error(c, http.StatusBadRequest, "Missing app or name")
+	if app == "" {
+		app = "live"
+	}
+
+	log.Printf("[StreamStop] Received stop request: app=%s, stream=%s", app, streamKey)
+
+	if streamKey == "" {
+		log.Printf("[StreamStop] Missing stream key parameter")
+		response.JSON(c, http.StatusOK, gin.H{"message": "Stream stopped (no key)"})
 		return
 	}
 

@@ -14,13 +14,18 @@ import (
 	"github.com/Carlvalencia1/streamhub-backend/internal/streams/domain"
 )
 
-// Get streaming server base URL for constructing RTMP URLs
-// Uses environment variable or defaults to streaming server IP
 func getStreamingServerURL() string {
 	if url := os.Getenv("STREAM_SERVER"); url != "" {
 		return url
 	}
-	return "rtmp://54.144.66.251/live"
+	return "rtmp://127.0.0.1/live"
+}
+
+func getHLSServerURL() string {
+	if url := os.Getenv("HLS_SERVER"); url != "" {
+		return url
+	}
+	return "http://127.0.0.1:8085/hls"
 }
 
 type Handler struct {
@@ -30,6 +35,7 @@ type Handler struct {
 	startUC     *application.StartStream
 	stopUC      *application.StopStream
 	joinUC      *application.JoinStream
+	streamRepo  domain.StreamRepository
 }
 
 func NewHandler(
@@ -39,15 +45,39 @@ func NewHandler(
 	startUC *application.StartStream,
 	stopUC *application.StopStream,
 	joinUC *application.JoinStream,
+	streamRepo domain.StreamRepository,
 ) *Handler {
 	return &Handler{
-		createUC:  createUC,
-		getUC:     getUC,
-		getByIDUC: getByIDUC,
-		startUC:   startUC,
-		stopUC:    stopUC,
-		joinUC:    joinUC,
+		createUC:   createUC,
+		getUC:      getUC,
+		getByIDUC:  getByIDUC,
+		startUC:    startUC,
+		stopUC:     stopUC,
+		joinUC:     joinUC,
+		streamRepo: streamRepo,
 	}
+}
+
+// DVRNotify is called by SRS when a DVR session ends.
+// Payload: {"action":"on_dvr","stream":"<stream_key>","file":"<path>"}
+func (h *Handler) DVRNotify(c *gin.Context) {
+	var body struct {
+		Action string `json:"action"`
+		Stream string `json:"stream"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Stream == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	hlsBase := getHLSServerURL()
+	base := hlsBase[:strings.LastIndex(hlsBase, "/")]
+	recordingURL := fmt.Sprintf("%s/recordings/%s.mp4", base, body.Stream)
+	if err := h.streamRepo.SetRecordingURL(c, body.Stream, recordingURL); err != nil {
+		logger.Error(fmt.Sprintf("DVRNotify: failed to set recording_url for %s: %v", body.Stream, err))
+	} else {
+		logger.Info(fmt.Sprintf("DVR saved: %s → %s", body.Stream, recordingURL))
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0})
 }
 
 type createRequest struct {
@@ -112,16 +142,15 @@ func (h *Handler) Create(c *gin.Context) {
 
 	logger.StreamEvent("CREATED", stream.ID, fmt.Sprintf("Title: %s | Owner: %s", stream.Title, userID.(string)))
 
-	// Construct RTMP URL using streaming server
-	streamingServerURL := getStreamingServerURL()
-	rtmpURL := fmt.Sprintf("%s/%s", streamingServerURL, stream.StreamKey)
+	rtmpURL := fmt.Sprintf("%s/%s", getStreamingServerURL(), stream.StreamKey)
+	hlsURL := fmt.Sprintf("%s/%s.m3u8", getHLSServerURL(), stream.StreamKey)
 
 	response := createResponse{
 		ID:          stream.ID,
 		Title:       stream.Title,
 		StreamKey:   stream.StreamKey,
 		RTMPUrl:     rtmpURL,
-		PlaybackURL: stream.PlaybackURL,
+		PlaybackURL: hlsURL,
 	}
 
 	c.JSON(http.StatusCreated, response)
@@ -262,11 +291,9 @@ func (h *Handler) GetPlayback(c *gin.Context) {
 		return
 	}
 
-	// Build HLS URL if PlaybackURL is not already set
 	hlsURL := stream.PlaybackURL
 	if hlsURL == "" {
-		// Fallback: construct from stream_key
-		hlsURL = fmt.Sprintf("http://54.144.66.251/hls/%s/index.m3u8", stream.StreamKey)
+		hlsURL = fmt.Sprintf("%s/%s/index.m3u8", getHLSServerURL(), stream.StreamKey)
 	}
 
 	response := playbackResponse{

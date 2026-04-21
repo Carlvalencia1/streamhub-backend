@@ -64,6 +64,7 @@ func (uc *GoogleAuthUser) Execute(ctx context.Context, idToken string) (string, 
 		Username: username,
 		Email:    claims.Email,
 		Password: hash,
+		Role:     "viewer",
 	}
 
 	if claims.Picture != "" {

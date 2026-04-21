@@ -16,6 +16,7 @@ func RegisterRoutes(r *gin.RouterGroup, handler *Handler, validationHandler *Str
 	streams.POST("/validate-key", validationHandler.ValidateKey)
 	streams.POST("/stop", validationHandler.StopStream)
 	streams.GET("/health", validationHandler.HealthCheck)
+	streams.POST("/dvr-notify", handler.DVRNotify)
 
 	protected := streams.Group("/")
 	protected.Use(middleware.AuthMiddleware())

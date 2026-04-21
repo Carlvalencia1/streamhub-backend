@@ -19,6 +19,18 @@ import (
 	notificationsApp "github.com/Carlvalencia1/streamhub-backend/internal/notifications/application"
 	notificationsHTTP "github.com/Carlvalencia1/streamhub-backend/internal/notifications/interfaces/http"
 
+	followersInfra "github.com/Carlvalencia1/streamhub-backend/internal/followers/infrastructure"
+	followersApp "github.com/Carlvalencia1/streamhub-backend/internal/followers/application"
+	followersHTTP "github.com/Carlvalencia1/streamhub-backend/internal/followers/interfaces/http"
+
+	communitiesInfra "github.com/Carlvalencia1/streamhub-backend/internal/communities/infrastructure"
+	communitiesHTTP "github.com/Carlvalencia1/streamhub-backend/internal/communities/interfaces/http"
+
+	channelpostsInfra "github.com/Carlvalencia1/streamhub-backend/internal/channelposts/infrastructure"
+	channelpostsHTTP "github.com/Carlvalencia1/streamhub-backend/internal/channelposts/interfaces/http"
+
+	uploadHTTP "github.com/Carlvalencia1/streamhub-backend/internal/upload/interfaces/http"
+
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/config"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/middleware"
@@ -32,10 +44,6 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// =========================
-	// Users Module
-	// =========================
-
 	userRepo := usersInfra.NewMySQLRepository(db)
 
 	registerUC := usersApp.NewRegisterUser(userRepo)
@@ -43,13 +51,69 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	listUC := usersApp.NewListUsers(userRepo)
 	googleAuthUC := usersApp.NewGoogleAuthUser(userRepo)
 
-	handler := usersHTTP.NewHandler(registerUC, loginUC, listUC, googleAuthUC)
-
+	handler := usersHTTP.NewHandler(registerUC, loginUC, listUC, googleAuthUC, userRepo)
 	usersHTTP.RegisterRoutes(api, handler)
 
-	// =========================
-	// Streams Module
-	// =========================
+	// Protected routes
+	protected := api.Group("/protected")
+	protected.Use(middleware.AuthMiddleware())
+
+	protected.GET("/me", func(c *gin.Context) {
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+			return
+		}
+		uid := userID.(string)
+		user, err := userRepo.GetByID(c, uid)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user"})
+			return
+		}
+
+		var followersCount, followingCount int
+		db.QueryRowContext(c, `SELECT COUNT(*) FROM followers WHERE streamer_id = ?`, uid).Scan(&followersCount)
+		db.QueryRowContext(c, `SELECT COUNT(*) FROM followers WHERE follower_id = ?`, uid).Scan(&followingCount)
+
+		c.JSON(200, gin.H{
+			"user_id":         user.ID,
+			"username":        user.Username,
+			"email":           user.Email,
+			"role":            user.Role,
+			"nickname":        user.Nickname,
+			"bio":             user.Bio,
+			"location":        user.Location,
+			"avatar_url":      user.AvatarURL,
+			"banner_url":      user.BannerURL,
+			"followers_count": followersCount,
+			"following_count": followingCount,
+		})
+	})
+
+	protected.PUT("/role", handler.SetRole)
+
+	type updateProfileRequest struct {
+		Nickname  *string `json:"nickname"`
+		Bio       *string `json:"bio"`
+		Location  *string `json:"location"`
+		BannerURL *string `json:"banner_url"`
+	}
+	protected.PUT("/profile", func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		var req updateProfileRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := userRepo.UpdateProfile(c, userID, req.Nickname, req.Bio, req.Location); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
+			return
+		}
+		if req.BannerURL != nil {
+			_ = userRepo.UpdateBanner(c, userID, req.BannerURL)
+		}
+		c.JSON(200, gin.H{"message": "profile updated"})
+	})
 
 	streamsRepo := streamsInfra.NewMySQLRepository(db)
 
@@ -67,18 +131,12 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 		startStreamUC,
 		stopStreamUC,
 		joinStreamUC,
+		streamsRepo,
 	)
 
-	// Validation handler (for NGINX RTMP webhooks)
 	validationHandler := streamsHTTP.NewStreamValidationHandler(streamsRepo)
-
 	streamsHTTP.RegisterRoutes(api, streamsHandler, validationHandler)
 
-	// =========================
-	// Notifications Module (FCM)
-	// =========================
-
-	// Inicializar Firebase Push Provider
 	var firebasePushProvider *notificationsInfra.FirebasePushProvider
 	if cfg.FirebaseCredentialsPath != "" {
 		var err error
@@ -95,32 +153,38 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 
 	registerTokenUC := notificationsApp.NewRegisterFcmToken(notificationRepo)
 	removeTokenUC := notificationsApp.NewRemoveFcmToken(notificationRepo)
-	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider)
+	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider, userRepo)
 
 	notificationHandler := notificationsHTTP.NewHandler(registerTokenUC, removeTokenUC)
-
 	notificationsHTTP.RegisterRoutes(api, notificationHandler)
 
-	// Inyectar notifyStreamLiveUC en streams module (para usarlo en StartStream)
 	streamsApp.SetStreamLiveNotifier(notifyStreamLiveUC)
 
-	// =========================
-	// Protected Routes Example
-	// =========================
+	notifyNewFollowerUC := notificationsApp.NewNotifyNewFollower(notificationRepo, firebasePushProvider)
+	followersApp.SetNewFollowerNotifier(notifyNewFollowerUC)
 
-	protected := api.Group("/protected")
-	protected.Use(middleware.AuthMiddleware())
+	followerRepo := followersInfra.NewMySQLRepository(db)
 
-	protected.GET("/me", func(c *gin.Context) {
+	followUC := followersApp.NewFollow(followerRepo)
+	unfollowUC := followersApp.NewUnfollow(followerRepo)
+	getStatusUC := followersApp.NewGetFollowerStatus(followerRepo)
+	getFollowingUC := followersApp.NewGetFollowing(followerRepo)
+	getFollowerUsersUC := followersApp.NewGetFollowerUsers(followerRepo)
+	getFollowingUsersUC := followersApp.NewGetFollowingUsers(followerRepo)
 
-		userID, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
-			return
-		}
+	followersHandler := followersHTTP.NewHandler(followUC, unfollowUC, getStatusUC, getFollowingUC, getFollowerUsersUC, getFollowingUsersUC)
+	followersHTTP.RegisterRoutes(api, followersHandler)
 
-		c.JSON(200, gin.H{
-			"user_id": userID,
-		})
-	})
+	communityRepo := communitiesInfra.NewMySQLRepository(db)
+	communityHandler := communitiesHTTP.NewHandler(communityRepo)
+	communitiesHTTP.RegisterRoutes(api, communityHandler)
+
+	channelPostRepo := channelpostsInfra.NewMySQLRepository(db)
+	channelPostHandler := channelpostsHTTP.NewHandler(channelPostRepo)
+	channelpostsHTTP.RegisterRoutes(api, channelPostHandler)
+
+	uploadHandler := uploadHTTP.NewHandler()
+	uploadHTTP.RegisterRoutes(api, uploadHandler)
+
+	r.Static("/uploads", "./uploads")
 }

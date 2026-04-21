@@ -16,4 +16,5 @@ type Stream struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	StreamKey    string     `json:"stream_key"`
 	PlaybackURL  string     `json:"playback_url"`
+	RecordingURL *string    `json:"recording_url,omitempty"`
 }
