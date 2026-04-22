@@ -21,9 +21,10 @@ func NewStreamValidationHandler(streamRepository domain.StreamRepository) *Strea
 	}
 }
 
-// ValidateStreamKeyResponse is the response for NGINX
-type ValidateStreamKeyResponse struct {
-	Valid bool `json:"valid"`
+// SRSResponse matches the standard SRS callback response format
+type SRSResponse struct {
+	Code int         `json:"code"`
+	Data interface{} `json:"data"`
 }
 
 // ValidateKey validates stream_key from SRS on_publish event
@@ -88,7 +89,7 @@ func (h *StreamValidationHandler) ValidateKey(c *gin.Context) {
 	}
 
 	log.Printf("[StreamValidation] ✓ Stream key validated successfully: %s", streamKey)
-	response.JSON(c, http.StatusOK, ValidateStreamKeyResponse{Valid: true})
+	response.JSON(c, http.StatusOK, SRSResponse{Code: 0, Data: map[string]interface{}{"valid": true}})
 }
 
 // StopStream handles SRS on_unpublish event
