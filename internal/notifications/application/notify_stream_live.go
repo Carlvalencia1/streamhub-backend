@@ -7,6 +7,7 @@ import (
 	"github.com/Carlvalencia1/streamhub-backend/internal/notifications/domain"
 	"github.com/Carlvalencia1/streamhub-backend/internal/platform/logger"
 	usersDomain "github.com/Carlvalencia1/streamhub-backend/internal/users/domain"
+	"github.com/google/uuid"
 )
 
 type NotifyStreamLive struct {
@@ -30,6 +31,9 @@ type NotifyStreamLiveInput struct {
 }
 
 func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) error {
+	// Generar trace_id único para E2E tracking
+	traceID := uuid.NewString()
+
 	var notifyInput NotifyStreamLiveInput
 
 	if m, ok := input.(map[string]interface{}); ok {
@@ -59,22 +63,56 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 		return nil
 	}
 
-	tokens, err := uc.repo.GetDeviceTokensByFollowers(ctx, notifyInput.OwnerUserID)
+	// Log inicio de solicitud
+	logger.NotificationStreamLiveRequest(traceID, notifyInput.StreamID, notifyInput.OwnerUserID)
+
+	// Obtener tokens de followers
+	followerTokens, err := uc.repo.GetDeviceTokensByFollowers(ctx, notifyInput.OwnerUserID)
 	if err != nil {
-		logger.Error(fmt.Sprintf("failed to get device tokens: %v", err))
+		logger.Error(fmt.Sprintf("[%s] failed to get follower tokens: %v", traceID, err))
 		return err
 	}
 
-	if len(tokens) == 0 {
-		logger.Info(fmt.Sprintf("no devices to notify for stream %s", notifyInput.StreamID))
+	// Obtener tokens del streamer para autonotificación
+	streamerTokens, err := uc.repo.GetDeviceTokensByUser(ctx, notifyInput.OwnerUserID)
+	if err != nil {
+		logger.Error(fmt.Sprintf("[%s] failed to get streamer tokens: %v", traceID, err))
+		return err
+	}
+
+	// Deduplicar tokens (usar map para eliminar duplicados)
+	tokenSet := make(map[string]bool)
+	var allTokens []string
+
+	// Agregar tokens de followers
+	for _, token := range followerTokens {
+		if !tokenSet[token.Token] {
+			tokenSet[token.Token] = true
+			allTokens = append(allTokens, token.Token)
+		}
+	}
+
+	// Agregar tokens del streamer (autonotificación)
+	for _, token := range streamerTokens {
+		if !tokenSet[token.Token] {
+			tokenSet[token.Token] = true
+			allTokens = append(allTokens, token.Token)
+		}
+	}
+
+	followerTokenCount := len(followerTokens)
+	streamerTokenCount := len(streamerTokens)
+	dedupTokenCount := len(allTokens)
+
+	// Log de resolución de destinatarios
+	logger.ResolveRecipients(traceID, followerTokenCount, streamerTokenCount, dedupTokenCount)
+
+	if dedupTokenCount == 0 {
+		logger.Info(fmt.Sprintf("[%s] no devices to notify for stream %s", traceID, notifyInput.StreamID))
 		return nil
 	}
 
-	tokenStrings := make([]string, len(tokens))
-	for i, t := range tokens {
-		tokenStrings[i] = t.Token
-	}
-
+	// Obtener nombre del streamer
 	streamerName := notifyInput.StreamTitle
 	if uc.userRepo != nil {
 		if u, err := uc.userRepo.GetByID(ctx, notifyInput.OwnerUserID); err == nil && u != nil {
@@ -82,6 +120,7 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 		}
 	}
 
+	// Construir payload con trace_id y streamer_id
 	payload := &domain.PushPayload{
 		Title: "Stream en vivo",
 		Body:  fmt.Sprintf("%s está en vivo", streamerName),
@@ -89,21 +128,29 @@ func (uc *NotifyStreamLive) Execute(ctx context.Context, input interface{}) erro
 			"type":         "stream_live",
 			"stream_id":    notifyInput.StreamID,
 			"stream_title": notifyInput.StreamTitle,
+			"streamer_id":  notifyInput.OwnerUserID,
 			"title":        "Stream en vivo",
 			"message":      fmt.Sprintf("%s está en vivo", streamerName),
+			"trace_id":     traceID,
 		},
 	}
 
-	if err := uc.provider.SendMulticast(ctx, tokenStrings, payload); err != nil {
-		logger.Error(fmt.Sprintf("failed to send multicast notification: %v", err))
+	// Enviar con batching (máximo 500 tokens por lote)
+	if err := uc.provider.SendMulticastBatch(ctx, allTokens, payload, traceID); err != nil {
+		logger.Error(fmt.Sprintf("[%s] failed to send multicast notification: %v", traceID, err))
 		return err
 	}
 
-	logger.Info(fmt.Sprintf("stream live notification sent to %d devices for stream: %s", len(tokenStrings), notifyInput.StreamID))
-
-	for _, token := range tokens {
+	// Actualizar last_used_at para todos los tokens enviados
+	for _, token := range followerTokens {
 		_ = uc.repo.UpdateTokenLastUsed(ctx, token.Token)
 	}
+	for _, token := range streamerTokens {
+		_ = uc.repo.UpdateTokenLastUsed(ctx, token.Token)
+	}
+
+	// Log de finalización
+	logger.StreamLiveNotificationDone(traceID, dedupTokenCount)
 
 	return nil
 }

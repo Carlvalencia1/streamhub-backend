@@ -15,6 +15,7 @@ type NotificationRepository interface {
 
 type PushProvider interface {
 	SendMulticast(ctx context.Context, tokens []string, payload *PushPayload) error
+	SendMulticastBatch(ctx context.Context, tokens []string, payload *PushPayload, traceID string) error
 	IsTokenInvalid(err error) bool
 }
 

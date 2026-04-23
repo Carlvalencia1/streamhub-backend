@@ -76,31 +76,46 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		},
 	}
 
+	// Obtener trace_id del payload si está disponible
+	traceID := ""
+	if payload != nil && payload.Data != nil {
+		if tid, ok := payload.Data["trace_id"]; ok {
+			traceID = tid
+		}
+	}
+
 	// Enviar multicast (máximo 500 tokens por llamada)
 	resp, err := p.client.SendMulticast(ctx, message)
 	if err != nil {
-		logger.Error(fmt.Sprintf("error sending multicast: %v", err))
+		logger.Error(fmt.Sprintf("[%s] error sending multicast: %v", traceID, err))
 		return err
 	}
 
 	// Procesar tokens fallidos y marcarlos como inválidos
+	invalidatedCount := 0
 	if resp.FailureCount > 0 && p.tokenRepository != nil {
 		for idx, sendResp := range resp.Responses {
 			if sendResp.Error != nil && idx < len(tokens) {
 				failedToken := tokens[idx]
-				logger.Warn(fmt.Sprintf("token failed to send: %s, error: %v", failedToken, sendResp.Error))
+				logger.Warn(fmt.Sprintf("[%s] token failed to send: %s, error: %v", traceID, failedToken, sendResp.Error))
 				
 				// Marcar token como inválido en la BD
 				if markErr := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); markErr != nil {
-					logger.Error(fmt.Sprintf("failed to mark token as invalid: %v", markErr))
+					logger.Error(fmt.Sprintf("[%s] failed to mark token as invalid: %v", traceID, markErr))
+				} else {
+					invalidatedCount++
 				}
 			}
 		}
 	}
 
-	// Log de resultados
-	logger.Info(fmt.Sprintf("multicast sent successfully. Success: %d, Failure: %d",
-		resp.SuccessCount, resp.FailureCount))
+	// Log de resultados con estadísticas
+	if invalidatedCount > 0 {
+		logger.InvalidateTokens(traceID, invalidatedCount)
+	}
+
+	logger.Info(fmt.Sprintf("[%s] multicast sent successfully. Success: %d, Failure: %d, Invalidated: %d",
+		traceID, resp.SuccessCount, resp.FailureCount, invalidatedCount))
 
 	return nil
 }
@@ -131,24 +146,28 @@ func (p *FirebasePushProvider) IsTokenInvalid(err error) bool {
 
 // SendMulticastBatch divide los tokens en lotes y envía
 // Útil cuando tenemos más de 500 tokens (límite de Firebase)
-func (p *FirebasePushProvider) SendMulticastBatch(ctx context.Context, tokens []string, payload *domain.PushPayload, batchSize int) error {
+func (p *FirebasePushProvider) SendMulticastBatch(ctx context.Context, tokens []string, payload *domain.PushPayload, traceID string) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 
-	if batchSize <= 0 {
-		batchSize = 500 // Límite de Firebase
-	}
+	batchSize := 500 // Límite de Firebase
 
-	for i := 0; i < len(tokens); i += batchSize {
-		end := i + batchSize
+	for batchIndex := 0; batchIndex < len(tokens); batchIndex += batchSize {
+		end := batchIndex + batchSize
 		if end > len(tokens) {
 			end = len(tokens)
 		}
 
-		batch := tokens[i:end]
+		batch := tokens[batchIndex:end]
+		batchNum := (batchIndex / batchSize) + 1
+		
+		// Log del inicio del batch
+		logger.Info(fmt.Sprintf("[%s] sending batch %d/%d with %d tokens",
+			traceID, batchNum, (len(tokens)+batchSize-1)/batchSize, len(batch)))
+		
 		if err := p.SendMulticast(ctx, batch, payload); err != nil {
-			logger.Error(fmt.Sprintf("error sending batch [%d:%d]: %v", i, end, err))
+			logger.Error(fmt.Sprintf("[%s] error sending batch %d [%d:%d]: %v", traceID, batchNum, batchIndex, end, err))
 			return err
 		}
 	}
