@@ -85,16 +85,14 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 
 	// Procesar tokens fallidos y marcarlos como inválidos
 	if resp.FailureCount > 0 && p.tokenRepository != nil {
-		for idx, err := range resp.Errors {
-			if err != nil {
-				if idx < len(tokens) {
-					failedToken := tokens[idx]
-					logger.Warn(fmt.Sprintf("token failed to send: %s, error: %v", failedToken, err.Err))
-					
-					// Marcar token como inválido en la BD
-					if markErr := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); markErr != nil {
-						logger.Error(fmt.Sprintf("failed to mark token as invalid: %v", markErr))
-					}
+		for idx, sendResp := range resp.Responses {
+			if sendResp.Error != nil && idx < len(tokens) {
+				failedToken := tokens[idx]
+				logger.Warn(fmt.Sprintf("token failed to send: %s, error: %v", failedToken, sendResp.Error))
+				
+				// Marcar token como inválido en la BD
+				if markErr := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); markErr != nil {
+					logger.Error(fmt.Sprintf("failed to mark token as invalid: %v", markErr))
 				}
 			}
 		}
