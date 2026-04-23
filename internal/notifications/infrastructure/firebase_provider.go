@@ -14,7 +14,8 @@ import (
 )
 
 type FirebasePushProvider struct {
-	client *messaging.Client
+	client            *messaging.Client
+	tokenRepository   domain.NotificationRepository
 }
 
 func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, error) {
@@ -35,6 +36,11 @@ func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, err
 
 	logger.Info("Firebase Messaging client initialized successfully")
 	return &FirebasePushProvider{client: client}, nil
+}
+
+// SetTokenRepository inyecta el repositorio para marcar tokens como inválidos
+func (p *FirebasePushProvider) SetTokenRepository(repo domain.NotificationRepository) {
+	p.tokenRepository = repo
 }
 
 // SendMulticast envía una notificación a múltiples dispositivos
@@ -75,6 +81,23 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 	if err != nil {
 		logger.Error(fmt.Sprintf("error sending multicast: %v", err))
 		return err
+	}
+
+	// Procesar tokens fallidos y marcarlos como inválidos
+	if resp.FailureCount > 0 && p.tokenRepository != nil {
+		for idx, err := range resp.Errors {
+			if err != nil {
+				if idx < len(tokens) {
+					failedToken := tokens[idx]
+					logger.Warn(fmt.Sprintf("token failed to send: %s, error: %v", failedToken, err.Err))
+					
+					// Marcar token como inválido en la BD
+					if markErr := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); markErr != nil {
+						logger.Error(fmt.Sprintf("failed to mark token as invalid: %v", markErr))
+					}
+				}
+			}
+		}
 	}
 
 	// Log de resultados

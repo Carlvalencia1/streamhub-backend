@@ -150,6 +150,11 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	}
 
 	notificationRepo := notificationsInfra.NewDeviceTokenRepository(db)
+	
+	// Inyectar el repositorio al Firebase provider para marcar tokens como inválidos
+	if firebasePushProvider != nil {
+		firebasePushProvider.SetTokenRepository(notificationRepo)
+	}
 
 	registerTokenUC := notificationsApp.NewRegisterFcmToken(notificationRepo)
 	removeTokenUC := notificationsApp.NewRemoveFcmToken(notificationRepo)
