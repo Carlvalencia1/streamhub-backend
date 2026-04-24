@@ -19,10 +19,13 @@ type FirebasePushProvider struct {
 }
 
 func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, error) {
-	ctx := context.Background()
+    ctx := context.Background()
 
-	opt := option.WithCredentialsFile(credentialsPath)
-	app, err := firebase.NewApp(ctx, nil, opt)
+    // 🔥 FORZAR USO DE API V1
+    opt := option.WithCredentialsFile(credentialsPath)
+    opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
+    
+    app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
 		logger.Error(fmt.Sprintf("error initializing Firebase app: %v", err))
 		return nil, err
