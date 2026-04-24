@@ -160,7 +160,7 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, db *sql.DB) {
 	removeTokenUC := notificationsApp.NewRemoveFcmToken(notificationRepo)
 	notifyStreamLiveUC := notificationsApp.NewNotifyStreamLive(notificationRepo, firebasePushProvider, userRepo)
 
-	notificationHandler := notificationsHTTP.NewHandler(registerTokenUC, removeTokenUC)
+	notificationHandler := notificationsHTTP.NewHandler(registerTokenUC, removeTokenUC, notifyStreamLiveUC)
 	notificationsHTTP.RegisterRoutes(api, notificationHandler)
 
 	streamsApp.SetStreamLiveNotifier(notifyStreamLiveUC)

@@ -12,5 +12,6 @@ func RegisterRoutes(api *gin.RouterGroup, handler *Handler) {
 	{
 		notificationsGroup.POST("/fcm-token", handler.RegisterFCMToken)
 		notificationsGroup.DELETE("/fcm-token", handler.RemoveFCMToken)
+		notificationsGroup.POST("/stream-live", handler.NotifyStreamLive)
 	}
 }

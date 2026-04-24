@@ -11,138 +11,75 @@ import (
 )
 
 type Handler struct {
-	registerUC *application.RegisterFcmToken
-	removeUC   *application.RemoveFcmToken
+	registerUC      *application.RegisterFcmToken
+	removeUC        *application.RemoveFcmToken
+	notifyStreamLive *application.NotifyStreamLive  // 👈 Agrega esto
 }
 
 func NewHandler(
 	registerUC *application.RegisterFcmToken,
 	removeUC *application.RemoveFcmToken,
+	notifyStreamLive *application.NotifyStreamLive, // 👈 Agrega esto
 ) *Handler {
 	return &Handler{
-		registerUC: registerUC,
-		removeUC:   removeUC,
+		registerUC:      registerUC,
+		removeUC:        removeUC,
+		notifyStreamLive: notifyStreamLive, // 👈 Agrega esto
 	}
 }
 
-// RegisterFCMToken godoc
-// @Summary Registrar token FCM
-// @Description Registra o actualiza un token FCM para el dispositivo del usuario autenticado
+// ... tus métodos existentes RegisterFCMToken y RemoveFCMToken ...
+
+// NotifyStreamLiveRequest representa la solicitud para notificar inicio de stream
+type NotifyStreamLiveRequest struct {
+	StreamID    string `json:"stream_id" binding:"required"`
+	StreamTitle string `json:"stream_title" binding:"required"`
+	OwnerUserID string `json:"owner_user_id" binding:"required"`
+}
+
+// NotifyStreamLive godoc
+// @Summary Notificar inicio de stream
+// @Description Envía notificaciones push a todos los seguidores del streamer
 // @Tags Notifications
 // @Accept json
 // @Produce json
-// @Param request body RegisterFCMTokenRequest true "FCM Token Request"
+// @Param request body NotifyStreamLiveRequest true "Stream Live Notification Request"
 // @Security Bearer
 // @Success 200 {object} response.SuccessResponse
 // @Failure 400 {object} response.ErrorResponse
 // @Failure 401 {object} response.ErrorResponse
 // @Failure 500 {object} response.ErrorResponse
-// @Router /notifications/fcm-token [post]
-func (h *Handler) RegisterFCMToken(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		logger.Warn("user_id not found in context for RegisterFCMToken")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
-		return
-	}
-
-	var req RegisterFCMTokenRequest
+// @Router /notifications/stream-live [post]
+func (h *Handler) NotifyStreamLive(c *gin.Context) {
+	var req NotifyStreamLiveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Warn("invalid request body for RegisterFCMToken: " + err.Error())
+		logger.Warn("invalid request body for NotifyStreamLive: " + err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
 
 	// Validación
-	if req.Token == "" {
-		logger.Warn("empty token provided")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token cannot be empty"})
+	if req.StreamID == "" || req.StreamTitle == "" || req.OwnerUserID == "" {
+		logger.Warn("missing required fields for NotifyStreamLive")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "stream_id, stream_title and owner_user_id are required"})
 		return
 	}
 
 	// Ejecutar usecase
-	input := application.RegisterFcmTokenInput{
-		UserID:     userID.(string),
-		Token:      req.Token,
-		Platform:   req.Platform,
-		DeviceID:   req.DeviceID,
-		AppVersion: req.AppVersion,
+	input := application.NotifyStreamLiveInput{
+		StreamID:    req.StreamID,
+		StreamTitle: req.StreamTitle,
+		OwnerUserID: req.OwnerUserID,
 	}
 
-	if err := h.registerUC.Execute(c, input); err != nil {
-		logger.Error("failed to register FCM token: " + err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register token"})
+	if err := h.notifyStreamLive.Execute(c, input); err != nil {
+		logger.Error("failed to send stream live notifications: " + err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send notifications"})
 		return
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Message: "Token registrado exitosamente",
+		Message: "Notificaciones enviadas a los seguidores",
 	})
-}
-
-// RemoveFCMToken godoc
-// @Summary Eliminar token FCM
-// @Description Elimina un token FCM específico del usuario autenticado
-// @Tags Notifications
-// @Accept json
-// @Produce json
-// @Param request body RemoveFCMTokenRequest true "FCM Token to Remove"
-// @Security Bearer
-// @Success 200 {object} response.SuccessResponse
-// @Failure 400 {object} response.ErrorResponse
-// @Failure 401 {object} response.ErrorResponse
-// @Failure 500 {object} response.ErrorResponse
-// @Router /notifications/fcm-token [delete]
-func (h *Handler) RemoveFCMToken(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		logger.Warn("user_id not found in context for RemoveFCMToken")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
-		return
-	}
-
-	var req RemoveFCMTokenRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Warn("invalid request body for RemoveFCMToken: " + err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
-		return
-	}
-
-	// Validación
-	if req.Token == "" {
-		logger.Warn("empty token provided for removal")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token cannot be empty"})
-		return
-	}
-
-	// Ejecutar usecase
-	input := application.RemoveFcmTokenInput{
-		UserID: userID.(string),
-		Token:  req.Token,
-	}
-
-	if err := h.removeUC.Execute(c, input); err != nil {
-		logger.Error("failed to remove FCM token: " + err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Message: "Token eliminado exitosamente",
-	})
-}
-
-// Request/Response DTOs
-
-type RegisterFCMTokenRequest struct {
-	Token      string `json:"token" binding:"required"`
-	Platform   string `json:"platform" binding:"required,oneof=android ios"`
-	DeviceID   string `json:"device_id"`
-	AppVersion string `json:"app_version"`
-}
-
-type RemoveFCMTokenRequest struct {
-	Token string `json:"token" binding:"required"`
 }
