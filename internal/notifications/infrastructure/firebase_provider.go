@@ -21,8 +21,21 @@ type FirebasePushProvider struct {
 func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, error) {
 	ctx := context.Background()
 
+	if credentialsPath == "" {
+		logger.Error("CRITICAL: credentialsPath is empty. Firebase cannot be initialized.")
+		return nil, fmt.Errorf("firebase credentials path is required")
+	}
+
+	logger.Info(fmt.Sprintf("Attempting to initialize Firebase with credentials from: %s", credentialsPath))
+
 	opt := option.WithCredentialsFile(credentialsPath)
-	app, err := firebase.NewApp(ctx, nil, opt)
+	opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
+	
+	conf := &firebase.Config{
+		ProjectID: "streamhub-64704",
+	}
+
+	app, err := firebase.NewApp(ctx, conf, opt)
 	if err != nil {
 		logger.Error(fmt.Sprintf("error initializing Firebase app: %v", err))
 		return nil, err
@@ -73,9 +86,16 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		},
 	}
 
+	traceID := ""
+	if payload != nil && payload.Data != nil {
+		if tid, ok := payload.Data["trace_id"]; ok {
+			traceID = tid
+		}
+	}
+
 	resp, err := p.client.SendMulticast(ctx, message)
 	if err != nil {
-		logger.Error(fmt.Sprintf("error sending multicast: %v", err))
+		logger.Error(fmt.Sprintf("[%s] error sending multicast: %v", traceID, err))
 		return err
 	}
 
@@ -84,7 +104,7 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		for idx, sendResp := range resp.Responses {
 			if sendResp.Error != nil && idx < len(tokens) {
 				failedToken := tokens[idx]
-				logger.Warn(fmt.Sprintf("token failed: %s, error: %v", failedToken, sendResp.Error))
+				logger.Warn(fmt.Sprintf("[%s] token failed: %s, error: %v", traceID, failedToken, sendResp.Error))
 				if err := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); err == nil {
 					invalidatedCount++
 				}
@@ -92,8 +112,8 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		}
 	}
 
-	logger.Info(fmt.Sprintf("multicast sent successfully. Success: %d, Failure: %d, Invalidated: %d",
-		resp.SuccessCount, resp.FailureCount, invalidatedCount))
+	logger.Info(fmt.Sprintf("[%s] multicast sent successfully. Success: %d, Failure: %d, Invalidated: %d",
+		traceID, resp.SuccessCount, resp.FailureCount, invalidatedCount))
 
 	return nil
 }
@@ -122,24 +142,28 @@ func (p *FirebasePushProvider) IsTokenInvalid(err error) bool {
 }
 
 // SendMulticastBatch divide los tokens en lotes y envía
-func (p *FirebasePushProvider) SendMulticastBatch(ctx context.Context, tokens []string, payload *domain.PushPayload, batchSize int) error {
+// Útil cuando tenemos más de 500 tokens (límite de Firebase)
+func (p *FirebasePushProvider) SendMulticastBatch(ctx context.Context, tokens []string, payload *domain.PushPayload, traceID string) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 
-	if batchSize <= 0 {
-		batchSize = 500
-	}
+	batchSize := 500
 
-	for i := 0; i < len(tokens); i += batchSize {
-		end := i + batchSize
+	for batchIndex := 0; batchIndex < len(tokens); batchIndex += batchSize {
+		end := batchIndex + batchSize
 		if end > len(tokens) {
 			end = len(tokens)
 		}
 
-		batch := tokens[i:end]
+		batch := tokens[batchIndex:end]
+		batchNum := (batchIndex / batchSize) + 1
+
+		logger.Info(fmt.Sprintf("[%s] sending batch %d/%d with %d tokens",
+			traceID, batchNum, (len(tokens)+batchSize-1)/batchSize, len(batch)))
+
 		if err := p.SendMulticast(ctx, batch, payload); err != nil {
-			logger.Error(fmt.Sprintf("error sending batch [%d:%d]: %v", i, end, err))
+			logger.Error(fmt.Sprintf("[%s] error sending batch %d [%d:%d]: %v", traceID, batchNum, batchIndex, end, err))
 			return err
 		}
 	}
