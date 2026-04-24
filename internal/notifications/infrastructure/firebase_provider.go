@@ -28,11 +28,9 @@ func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, err
 
 	logger.Info(fmt.Sprintf("Initializing Firebase with credentials: %s", credentialsPath))
 
-	// 🔥 FORZAR USO DE API V1 CON ENDPOINT CORRECTO
 	opt := option.WithCredentialsFile(credentialsPath)
 	opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
 	
-	// 🔥 CONFIGURACIÓN EXPLÍCITA DEL PROYECTO
 	conf := &firebase.Config{
 		ProjectID: "streamhub-64704",
 	}
@@ -57,6 +55,7 @@ func (p *FirebasePushProvider) SetTokenRepository(repo domain.NotificationReposi
 	p.tokenRepository = repo
 }
 
+// SendMulticast envía notificaciones a múltiples dispositivos usando SendEachForMulticast
 func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []string, payload *domain.PushPayload) error {
 	if len(tokens) == 0 {
 		logger.Warn("no tokens provided for multicast")
@@ -94,7 +93,8 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		}
 	}
 
-	resp, err := p.client.SendMulticast(ctx, message)
+	// 🔥 CAMBIO IMPORTANTE: usar SendEachForMulticast en lugar de SendMulticast
+	resp, err := p.client.SendEachForMulticast(ctx, message)
 	if err != nil {
 		logger.Error(fmt.Sprintf("[%s] error sending multicast: %v", traceID, err))
 		return err
@@ -105,7 +105,7 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		for idx, sendResp := range resp.Responses {
 			if sendResp.Error != nil && idx < len(tokens) {
 				failedToken := tokens[idx]
-				logger.Warn(fmt.Sprintf("[%s] token failed: %s", traceID, failedToken))
+				logger.Warn(fmt.Sprintf("[%s] token failed: %s, error: %v", traceID, failedToken, sendResp.Error))
 				if err := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); err == nil {
 					invalidatedCount++
 				}
@@ -128,6 +128,8 @@ func (p *FirebasePushProvider) IsTokenInvalid(err error) bool {
 		"registration token is invalid",
 		"invalid registration token",
 		"mismatched credential",
+		"unregistered",
+		"not found",
 	}
 	for _, invalidErr := range invalidTokenErrors {
 		if strings.Contains(strings.ToLower(errStr), invalidErr) {
