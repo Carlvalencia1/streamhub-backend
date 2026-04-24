@@ -114,7 +114,16 @@ func (r *DeviceTokenRepository) GetDeviceTokensByUsersExcept(ctx context.Context
 	return r.scanDeviceTokens(rows)
 }
 
+// ============================================================
+// VERSIÓN TEMPORAL CON LOGS DE DIAGNÓSTICO
+// ============================================================
 func (r *DeviceTokenRepository) GetDeviceTokensByFollowers(ctx context.Context, streamerID string) ([]*domain.DeviceToken, error) {
+	// 🔥 LOG 1: Función llamada
+	logger.Info(fmt.Sprintf("[DB_DEBUG] ========================================="))
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 1. GetDeviceTokensByFollowers called"))
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 1. streamerID: '%s'", streamerID))
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 1. streamerID length: %d", len(streamerID)))
+
 	query := `
 		SELECT dt.id, dt.user_id, dt.token, dt.platform, dt.device_id, dt.app_version,
 		       dt.is_valid, dt.last_used_at, dt.created_at, dt.updated_at
@@ -123,14 +132,61 @@ func (r *DeviceTokenRepository) GetDeviceTokensByFollowers(ctx context.Context, 
 		WHERE f.streamer_id = ? AND dt.is_valid = true
 		ORDER BY dt.user_id, dt.created_at DESC
 	`
+
+	// 🔥 LOG 2: Consulta SQL que se va a ejecutar
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 2. Executing query"))
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 2. SQL: %s", query))
+
 	rows, err := r.db.QueryContext(ctx, query, streamerID)
 	if err != nil {
-		logger.Error(fmt.Sprintf("failed to get device tokens for followers of %s: %v", streamerID, err))
+		logger.Error(fmt.Sprintf("[DB_DEBUG] 3. Query execution FAILED: %v", err))
 		return nil, err
 	}
 	defer rows.Close()
-	return r.scanDeviceTokens(rows)
+	logger.Info("[DB_DEBUG] 3. Query execution SUCCESS")
+
+	var tokens []*domain.DeviceToken
+	rowCount := 0
+	for rows.Next() {
+		rowCount++
+		var dt domain.DeviceToken
+		err := rows.Scan(
+			&dt.ID,
+			&dt.UserID,
+			&dt.Token,
+			&dt.Platform,
+			&dt.DeviceID,
+			&dt.AppVersion,
+			&dt.IsValid,
+			&dt.LastUsedAt,
+			&dt.CreatedAt,
+			&dt.UpdatedAt,
+		)
+		if err != nil {
+			logger.Error(fmt.Sprintf("[DB_DEBUG] 4. Row scan ERROR at row %d: %v", rowCount, err))
+			return nil, err
+		}
+		logger.Info(fmt.Sprintf("[DB_DEBUG] 4. Row %d SCANNED:", rowCount))
+		logger.Info(fmt.Sprintf("[DB_DEBUG]    UserID: %s", dt.UserID))
+		logger.Info(fmt.Sprintf("[DB_DEBUG]    Token: %s...", dt.Token[:60]))
+		logger.Info(fmt.Sprintf("[DB_DEBUG]    Platform: %s", dt.Platform))
+		logger.Info(fmt.Sprintf("[DB_DEBUG]    IsValid: %v", dt.IsValid))
+		tokens = append(tokens, &dt)
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error(fmt.Sprintf("[DB_DEBUG] 5. Row iteration error: %v", err))
+		return nil, err
+	}
+
+	// 🔥 LOG 6: Resultado final
+	logger.Info(fmt.Sprintf("[DB_DEBUG] 6. FINAL RESULT: Returning %d tokens", len(tokens)))
+	logger.Info(fmt.Sprintf("[DB_DEBUG] ========================================="))
+	return tokens, nil
 }
+// ============================================================
+// FIN DE LA VERSIÓN TEMPORAL
+// ============================================================
 
 func (r *DeviceTokenRepository) MarkTokenAsInvalid(ctx context.Context, token string) error {
 	query := `UPDATE device_tokens SET is_valid = false, updated_at = NOW() WHERE token = ?`
