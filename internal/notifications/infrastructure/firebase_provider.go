@@ -3,7 +3,6 @@ package infrastructure
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
