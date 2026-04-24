@@ -19,13 +19,18 @@ type FirebasePushProvider struct {
 }
 
 func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, error) {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // 🔥 FORZAR USO DE API V1
-    opt := option.WithCredentialsFile(credentialsPath)
-    opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
-    
-    app, err := firebase.NewApp(ctx, nil, opt)
+	// 🔥 CONFIGURACIÓN COMPLETA
+	opt := option.WithCredentialsFile(credentialsPath)
+	opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
+	
+	// 🔥 PASAR EL PROJECT_ID EXPLÍCITAMENTE (ESTO ES CLAVE)
+	conf := &firebase.Config{
+		ProjectID: "streamhub-64704",
+	}
+	
+	app, err := firebase.NewApp(ctx, conf, opt)
 	if err != nil {
 		logger.Error(fmt.Sprintf("error initializing Firebase app: %v", err))
 		return nil, err
