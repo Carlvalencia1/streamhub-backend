@@ -22,15 +22,17 @@ func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, err
 	ctx := context.Background()
 
 	if credentialsPath == "" {
-		logger.Error("CRITICAL: credentialsPath is empty. Firebase cannot be initialized.")
+		logger.Error("CRITICAL: credentialsPath is empty")
 		return nil, fmt.Errorf("firebase credentials path is required")
 	}
 
-	logger.Info(fmt.Sprintf("Attempting to initialize Firebase with credentials from: %s", credentialsPath))
+	logger.Info(fmt.Sprintf("Initializing Firebase with credentials: %s", credentialsPath))
 
+	// 🔥 FORZAR USO DE API V1 CON ENDPOINT CORRECTO
 	opt := option.WithCredentialsFile(credentialsPath)
 	opt = option.WithEndpoint("https://fcm.googleapis.com/v1")
 	
+	// 🔥 CONFIGURACIÓN EXPLÍCITA DEL PROYECTO
 	conf := &firebase.Config{
 		ProjectID: "streamhub-64704",
 	}
@@ -51,17 +53,17 @@ func NewFirebasePushProvider(credentialsPath string) (*FirebasePushProvider, err
 	return &FirebasePushProvider{client: client}, nil
 }
 
-// SetTokenRepository inyecta el repositorio para marcar tokens como inválidos
 func (p *FirebasePushProvider) SetTokenRepository(repo domain.NotificationRepository) {
 	p.tokenRepository = repo
 }
 
-// SendMulticast envía una notificación a múltiples dispositivos
 func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []string, payload *domain.PushPayload) error {
 	if len(tokens) == 0 {
 		logger.Warn("no tokens provided for multicast")
 		return nil
 	}
+
+	logger.Info(fmt.Sprintf("Sending multicast to %d tokens", len(tokens)))
 
 	data := payload.Data
 	if data == nil {
@@ -82,12 +84,11 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 				Body:  payload.Body,
 				Sound: "default",
 			},
-			Data: data,
 		},
 	}
 
 	traceID := ""
-	if payload != nil && payload.Data != nil {
+	if payload.Data != nil {
 		if tid, ok := payload.Data["trace_id"]; ok {
 			traceID = tid
 		}
@@ -104,7 +105,7 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		for idx, sendResp := range resp.Responses {
 			if sendResp.Error != nil && idx < len(tokens) {
 				failedToken := tokens[idx]
-				logger.Warn(fmt.Sprintf("[%s] token failed: %s, error: %v", traceID, failedToken, sendResp.Error))
+				logger.Warn(fmt.Sprintf("[%s] token failed: %s", traceID, failedToken))
 				if err := p.tokenRepository.MarkTokenAsInvalid(ctx, failedToken); err == nil {
 					invalidatedCount++
 				}
@@ -112,61 +113,52 @@ func (p *FirebasePushProvider) SendMulticast(ctx context.Context, tokens []strin
 		}
 	}
 
-	logger.Info(fmt.Sprintf("[%s] multicast sent successfully. Success: %d, Failure: %d, Invalidated: %d",
+	logger.Info(fmt.Sprintf("[%s] multicast result - Success: %d, Failure: %d, Invalidated: %d",
 		traceID, resp.SuccessCount, resp.FailureCount, invalidatedCount))
 
 	return nil
 }
 
-// IsTokenInvalid verifica si un error indica que el token es inválido
 func (p *FirebasePushProvider) IsTokenInvalid(err error) bool {
 	if err == nil {
 		return false
 	}
-
 	errStr := err.Error()
 	invalidTokenErrors := []string{
 		"registration token is invalid",
-		"invalid registration token provided",
+		"invalid registration token",
 		"mismatched credential",
-		"instance id error",
 	}
-
 	for _, invalidErr := range invalidTokenErrors {
-		if strings.Contains(strings.ToLower(errStr), strings.ToLower(invalidErr)) {
+		if strings.Contains(strings.ToLower(errStr), invalidErr) {
 			return true
 		}
 	}
-
 	return false
 }
 
-// SendMulticastBatch divide los tokens en lotes y envía
-// Útil cuando tenemos más de 500 tokens (límite de Firebase)
 func (p *FirebasePushProvider) SendMulticastBatch(ctx context.Context, tokens []string, payload *domain.PushPayload, traceID string) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 
 	batchSize := 500
+	totalBatches := (len(tokens) + batchSize - 1) / batchSize
 
-	for batchIndex := 0; batchIndex < len(tokens); batchIndex += batchSize {
-		end := batchIndex + batchSize
+	for i := 0; i < len(tokens); i += batchSize {
+		end := i + batchSize
 		if end > len(tokens) {
 			end = len(tokens)
 		}
+		batch := tokens[i:end]
+		batchNum := (i / batchSize) + 1
 
-		batch := tokens[batchIndex:end]
-		batchNum := (batchIndex / batchSize) + 1
-
-		logger.Info(fmt.Sprintf("[%s] sending batch %d/%d with %d tokens",
-			traceID, batchNum, (len(tokens)+batchSize-1)/batchSize, len(batch)))
+		logger.Info(fmt.Sprintf("[%s] sending batch %d/%d with %d tokens", traceID, batchNum, totalBatches, len(batch)))
 
 		if err := p.SendMulticast(ctx, batch, payload); err != nil {
-			logger.Error(fmt.Sprintf("[%s] error sending batch %d [%d:%d]: %v", traceID, batchNum, batchIndex, end, err))
+			logger.Error(fmt.Sprintf("[%s] error sending batch %d: %v", traceID, batchNum, err))
 			return err
 		}
 	}
-
 	return nil
 }
